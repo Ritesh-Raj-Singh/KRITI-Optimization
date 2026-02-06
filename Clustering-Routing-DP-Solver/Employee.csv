@@ -1,0 +1,9 @@
+employee_id,priority,pickup_lat,pickup_lng,drop_lat,drop_lng,earliest_pickup,latest_drop,vehicle_preference,sharing_preference
+E01,1,12.9352,77.6245,12.9716,77.5946,08:30,09:30,premium,single
+E02,2,12.9298,77.621,12.9716,77.5946,08:45,10:00,any,double
+E03,3,12.944,77.6,12.9716,77.5946,09:00,10:30,normal,triple
+E04,2,12.96,77.638,12.9716,77.5946,08:30,09:45,any,double
+E05,4,12.915,77.61,12.9716,77.5946,09:15,11:00,any,triple
+E06,1,12.95,77.62,12.9716,77.5946,08:15,09:15,premium,single
+E07,3,12.925,77.64,12.9716,77.5946,09:30,11:00,normal,double
+E08,5,12.94,77.63,12.9716,77.5946,10:00,12:00,any,triple
