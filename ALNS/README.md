@@ -35,14 +35,14 @@ Once compiled, run the executable directly from the terminal. You must provide t
 
 **Windows (PowerShell/CMD):**
 ```powershell
-.\vrp_runner.exe ..\tc_v1.csv ..\tc_emp1.csv ..\tc_meta1.csv ..\dist.txt
+.\main_ALNS.exe ..\tc_v1.csv ..\tc_emp1.csv ..\tc_meta1.csv ..\dist.txt
 
 ```
 
 **macOS / Linux (Bash/Zsh):**
 
 ```bash
-./vrp_runner.exe ../tc_v1.csv ../tc_emp1.csv ../tc_meta1.csv ../dist.txt
+./main_ALNS.exe ../tc_v1.csv ../tc_emp1.csv ../tc_meta1.csv ../dist.txt
 
 ```
 
@@ -65,7 +65,7 @@ To clean up compiled object files (`.o`) and executables:
 
 ##  Project Structure
 
-* **`main.cpp`**: The entry point that orchestrates the VRP logic.
+* **`main_ALNS.cpp`**: The entry point that orchestrates the VRP logic.
 * **`ALNS.cpp`**: Contains the core logic for the Adaptive Large Neighborhood Search.
 * **`CSVReader.cpp`**: Handles parsing of Vehicle and Employee CSV files.
 * **`CostFunction.cpp`**: Calculates objective costs based on Metadata weights.
