@@ -12,7 +12,7 @@ def main():
     lines = content.split('\n')
     for line in lines:
         if "Vehicle 29:" in line or "Vehicle 20:" in line or "Vehicle 21:" in line:
-            print(f"FOUND: {line[:200]}") # Print first 200 chars
-
+            print(f"FOUND: {line[:200]}") 
 if __name__ == "__main__":
     main()
+

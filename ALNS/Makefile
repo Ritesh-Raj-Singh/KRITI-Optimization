@@ -1,31 +1,37 @@
-# Compiler Settings
-CXX      := g++
-CXXFLAGS := -std=c++17 -O3 -Wall -pthread
+# Detect OS
+ifeq ($(OS),Windows_NT)
+    # Windows settings
+    RM = del /Q /F
+    TARGET = main_ALNS
+    FixPath = $(subst /,\,$1)
+    EXEC = $(TARGET)
+else
+    # Mac/Linux settings
+    RM = rm -f
+    TARGET = main_ALNS
+    FixPath = $1
+    EXEC = ./$(TARGET)
+endif
 
-# Target Executable Name
-TARGET   := main_ALNS
+# Variables
+CXX = g++
+CXXFLAGS = -std=c++17 -O3
+SRCS = main_ALNS.cpp ALNS.cpp CSVReader.cpp CostFunction.cpp DestroyOperators.cpp RepairOperators.cpp
+OBJS = $(SRCS:.cpp=.o)
 
-# Automatically find all .cpp files in this folder
-SRCS     := $(wildcard *.cpp)
-# Generate corresponding .o file names
-OBJS     := $(SRCS:.cpp=.o)
-
-# Default Rule: Build the executable
+# Default target
 all: $(TARGET)
 
-# Link object files to create the executable
 $(TARGET): $(OBJS)
-	@echo "[ALNS] Linking $(TARGET)..."
-	$(CXX) $(CXXFLAGS) -o $(TARGET) $(OBJS)
+	$(CXX) $(CXXFLAGS) $(OBJS) -o $(TARGET)
 
-# Compile .cpp files into .o files
 %.o: %.cpp
-	@echo "[ALNS] Compiling $<..."
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# Clean up build files
+# Cross-platform clean
 clean:
-	@echo "[ALNS] Cleaning..."
-	rm -f $(OBJS) $(TARGET) output_vehicle.csv output_employees.csv run_log.txt
+	$(RM) *.o $(TARGET) output_vehicle.csv output_employees.csv
 
-.PHONY: all clean
+# # Cross-platform run
+# run: all
+# 	$(EXEC)
