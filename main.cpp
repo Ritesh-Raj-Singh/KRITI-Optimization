@@ -239,14 +239,19 @@ int main() {
         // ARGUMENT ORDER: vehicles -> employees -> metadata -> baseline -> matrix
         std::string args = "../vehicles.csv ../employees.csv ../metadata.csv ../baseline.csv ../matrix.txt";
         
-        SolverResult alns_res, bac_res;
+        SolverResult alns_res, bac_res, crds_res, hd_res, vnsk_res;
         
         std::thread t1([&](){ alns_res = run_solver("ALNS", "main_ALNS", args); });
         std::thread t2([&](){ bac_res = run_solver("Branch-And-Cut", "main_BAC", args); });
+        std::thread t3([&](){ crds_res = run_solver("Clustering-Routing-DP-Solver", "main", args); });
+        std::thread t4([&](){ hd_res = run_solver("Heterogeneous_DARP", "hetero", args); });
+        std::thread t5([&](){ vnsk_res = run_solver("Variable_Neighbourhood_Search-KRITI", "main", args); });
 
         t1.join();
         t2.join();
-
+        t3.join();
+        t4.join();
+        t5.join();
         
 
         // 5. Build Response
