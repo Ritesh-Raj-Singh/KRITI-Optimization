@@ -1,35 +1,35 @@
 # --- Variables ---
-# Name of your source file (without extension)
-SRC = main
-# Name of the output executable
 TARGET = route_optimizer
+SRC = main.cpp
+# If you have a matrix.cpp file, uncomment the line below and update OBJ
+# SRC_EXT = matrix.cpp 
 
-# Compiler
 CXX = g++
-# Compiler flags: 
-# -std=c++11: Required for your map/vector usage
-# -O3: High-level optimization for your 100,000 iterations
-# -Wall: Show all warnings
-CXXFLAGS = -std=c++11 -O3 -Wall
+CXXFLAGS = -std=c++11 -O3 -Wall -Wextra
+
+# Object files
+OBJ = $(SRC:.cpp=.o)
 
 # --- Rules ---
 
 # Default target
 all: $(TARGET)
 
-# Link the object files to create the executable
-$(TARGET): $(SRC).o
-	$(CXX) $(CXXFLAGS) -o $(TARGET) $(SRC).o
+# Link the executable
+$(TARGET): $(OBJ)
+	$(CXX) $(CXXFLAGS) -o $(TARGET) $(OBJ)
 
-# Compile the source file into an object file
-$(SRC).o: $(SRC).cpp
-	$(CXX) $(CXXFLAGS) -c $(SRC).cpp
+# Compile source files into object files
+%.o: %.cpp matrix.h
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# Clean up build files
+# Clean up build artifacts and output files
 clean:
-	rm -f $(SRC).o $(TARGET)
+	rm -f $(OBJ) $(TARGET)
 	rm -f vehicle_output.csv employee_output.csv
 
-# Run the program
+# Run the program after building
 run: $(TARGET)
 	./$(TARGET)
+
+.PHONY: all clean run
