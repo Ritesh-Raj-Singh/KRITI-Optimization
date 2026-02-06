@@ -6,6 +6,8 @@
 #include <vector>
 #include <string>
 
+int N, V;
+
 // matrix storage
 extern std::vector<std::vector<double>> matrix;
 

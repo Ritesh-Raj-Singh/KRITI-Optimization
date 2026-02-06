@@ -4,8 +4,6 @@
 #include <cmath>
 
 // DEFINITIONS (one and only one)
-int N = 0;
-int V = 0;
 std::vector<std::vector<double>> matrix;
 
 void loadMatrix(const std::string &filename, int size)

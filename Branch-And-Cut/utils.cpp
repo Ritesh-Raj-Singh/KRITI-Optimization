@@ -84,14 +84,14 @@ Request createRequest(
     else
         r.max_shared_with = 2;
 
-    double est_direct_dist = getDistanceFromMatrix(r.original_id, "OFFICE");
+    // double est_direct_dist = getDistanceFromMatrix(r.original_id, "OFFICE");
 
-    // Safe check for direct time
-    int direct_time = 0;
-    if (est_direct_dist > 0.005)
-    {
-        direct_time = std::ceil((est_direct_dist / 30.0) * 60.0);
-    }
+    // // Safe check for direct time
+    // int direct_time = 0;
+    // if (est_direct_dist > 0.005)
+    // {
+    //     direct_time = std::ceil((est_direct_dist / 30.0) * 60.0);
+    // }
 
     int allowed_delay = priority_delays.at(priority);
 
