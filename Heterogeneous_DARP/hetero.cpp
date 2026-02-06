@@ -15,13 +15,13 @@
 #include <chrono>
 #include "matrix.h"
 
-
 #ifndef M_PI
     #define M_PI 3.14159265358979323846
 #endif
 
 using namespace std;
 
+// Defined in matrix.cpp
 extern int N;
 extern int V;
 
@@ -29,7 +29,6 @@ extern int V;
 // 1. DATA STRUCTURES
 // ==========================================
 
-const double R_EARTH = 6371.0;
 const double INF = numeric_limits<double>::max();
 
 // Helper to convert minutes to HH:MM
@@ -67,17 +66,16 @@ struct Config {
     double beta = 10000.0;   // Time Window Penalty
     double gamma = 100000.0; // Capacity/Sharing Penalty
     
-    // Default delays, will be overwritten by loadMetadata
     map<int, int> max_delays = {{1, 10}, {2, 20}, {3, 30}, {4, 45}, {5, 60}};
 };
 
 enum NodeType { PICKUP, DROP };
 
-// Renamed from 'Employee' to 'Request' to match your reference naming convention
 struct Request {
-    int id;              // Sequential ID (0-based) used by solver
-    string original_id;  // ID from CSV
+    int id;              
+    string original_id;  
     int priority;
+    // Lat/Lng kept for file compatibility but NOT used for calculation
     double pickup_lat, pickup_lng;
     double drop_lat, drop_lng;
     int earliest_pickup; 
@@ -87,11 +85,12 @@ struct Request {
 };
 
 struct Vehicle {
-    int id;              // Sequential ID (1-based) used by solver
-    string original_id;  // ID from CSV
+    int id;              
+    string original_id;  
     int capacity;
     double cost_per_km;
     double avg_speed_kmph;
+    // Lat/Lng kept for file compatibility but NOT used for calculation
     double current_lat, current_lng;
     int available_from; 
     string category;    
@@ -116,17 +115,14 @@ struct RouteMetrics {
 };
 
 // ==========================================
-// 2. FILE LOADING FUNCTIONS (As Requested)
+// 2. FILE LOADING FUNCTIONS
 // ==========================================
 
 void loadMetadata(const string &filename, Config &config) {
     ifstream file(filename);
-    if (!file.is_open()) {
-        cerr << "Warning: Could not open " << filename << ". Using defaults.\n";
-        return;
-    }
+    if (!file.is_open()) return;
     string line;
-    getline(file, line); // Skip header
+    getline(file, line); 
 
     while (getline(file, line)) {
         if (line.empty()) continue;
@@ -134,8 +130,6 @@ void loadMetadata(const string &filename, Config &config) {
         string key, valStr;
         getline(ss, key, ',');
         getline(ss, valStr, ',');
-
-        // Clean strings
         key.erase(remove(key.begin(), key.end(), '\r'), key.end());
         valStr.erase(remove(valStr.begin(), valStr.end(), '\r'), valStr.end());
 
@@ -147,48 +141,34 @@ void loadMetadata(const string &filename, Config &config) {
         else if (key == "objective_cost_weight") config.cost_weight = stod(valStr);
         else if (key == "objective_time_weight") config.time_weight = stod(valStr);
     }
-    cout << "Metadata loaded: Cost Weight=" << config.cost_weight << ", Time Weight=" << config.time_weight << "\n";
 }
 
 vector<Vehicle> loadVehicles(const string &filename) {
     vector<Vehicle> vehicles;
     ifstream file(filename);
-    if (!file.is_open()) {
-        cerr << "Error: Could not open " << filename << "\n";
-        exit(1);
-    }
-
+    if (!file.is_open()) exit(1);
     string line;
-    getline(file, line); // Skip header row
-
-    int sequential_id = 0; // 0-based index for vector access
+    getline(file, line); 
+    int sequential_id = 0; 
 
     while (getline(file, line)) {
         if (line.empty()) continue;
         stringstream ss(line);
         string token;
         vector<string> row;
-
         while (getline(ss, token, ',')) {
-             // Basic cleaning
             token.erase(0, token.find_first_not_of(" \t\r\n\""));
             token.erase(token.find_last_not_of(" \t\r\n\"") + 1);
             row.push_back(token);
         }
-
         if (row.size() < 8) continue;
-
         Vehicle v;
         v.id = sequential_id++;
         v.original_id = row[0];
-
-        // Parse Category
         string catStr = row[9];
-        // Normalize category string for solver logic
         if (catStr == "premium" || catStr == "Premium") v.category = "premium";
         else if (catStr == "normal" || catStr == "Normal") v.category = "normal";
         else v.category = "any";
-
         try {
             v.capacity = stoi(row[3]);
             v.cost_per_km = stod(row[4]);
@@ -196,11 +176,7 @@ vector<Vehicle> loadVehicles(const string &filename) {
             v.current_lat = stod(row[6]);
             v.current_lng = stod(row[7]);
             v.available_from = timeStringToMin(row[8]);
-        } catch (...) {
-            cerr << "Skipping invalid vehicle row: " << row[0] << endl;
-            continue;
-        }
-
+        } catch (...) { continue; }
         vehicles.push_back(v);
     }
     cout << "Loaded " << vehicles.size() << " vehicles from " << filename << "\n";
@@ -210,38 +186,24 @@ vector<Vehicle> loadVehicles(const string &filename) {
 vector<Request> loadRequests(const string &filename, const map<int, int> &priority_delays) {
     vector<Request> requests;
     ifstream file(filename);
-    if (!file.is_open()) {
-        cerr << "Error: Could not open " << filename << "\n";
-        exit(1);
-    }
-
+    if (!file.is_open()) exit(1);
     string line;
-    getline(file, line); // Skip header
-
-    int sequential_id = 0; // Solver expects 0-based indexing for requests
-
+    getline(file, line); 
+    int sequential_id = 0; 
     while (getline(file, line)) {
         if (line.empty()) continue;
         stringstream ss(line);
         string token;
         vector<string> row;
-
         while (getline(ss, token, ',')) {
-             // Basic cleaning
             token.erase(0, token.find_first_not_of(" \t\r\n\""));
             token.erase(token.find_last_not_of(" \t\r\n\"") + 1);
             row.push_back(token);
         }
-
-        // Expected CSV Format:
-        // emp_id, priority, p_lat, p_lng, d_lat, d_lng, t_early, t_late, v_pref, s_pref
-
         if (row.size() < 10) continue;
-
         Request r;
         r.id = sequential_id++;
         r.original_id = row[0];
-
         try {
             r.priority = stoi(row[1]);
             r.pickup_lat = stod(row[2]);
@@ -250,40 +212,15 @@ vector<Request> loadRequests(const string &filename, const map<int, int> &priori
             r.drop_lng = stod(row[5]);
             r.earliest_pickup = timeStringToMin(row[6]);
             r.latest_drop = timeStringToMin(row[7]);
-        } catch (...) {
-             cerr << "Skipping invalid request row: " << row[0] << endl;
-             continue;
-        }
-
+        } catch (...) { continue; }
         r.vehicle_pref = row[8];
         transform(r.vehicle_pref.begin(), r.vehicle_pref.end(), r.vehicle_pref.begin(), ::tolower);
-        
         r.sharing_pref = row[9];
         transform(r.sharing_pref.begin(), r.sharing_pref.end(), r.sharing_pref.begin(), ::tolower);
-
         requests.push_back(r);
     }
     cout << "Loaded " << requests.size() << " requests from " << filename << "\n";
     return requests;
-}
-
-// ==========================================
-// 3. HELPER LOGIC
-// ==========================================
-
-double toRadians(double degree) { return degree * M_PI / 180.0; }
-
-double haversine(double lat1, double lon1, double lat2, double lon2) {
-    double dLat = toRadians(lat2 - lat1);
-    double dLon = toRadians(lon2 - lon1);
-    double a = sin(dLat / 2) * sin(dLat / 2) + cos(toRadians(lat1)) * cos(toRadians(lat2)) * sin(dLon / 2) * sin(dLon / 2);
-    double c = 2 * atan2(sqrt(a), sqrt(1 - a));
-    return R_EARTH * c;
-}
-
-double calculateTravelTime(double dist_km, double speed_kmph) {
-    if (speed_kmph <= 0) return 999999.0;
-    return (dist_km / speed_kmph) * 60.0;
 }
 
 int allowedLoad(const string& pref) {
@@ -308,8 +245,9 @@ public:
 
     RouteMetrics evaluate(const vector<Vehicle>& vehicles, const vector<Request>& requests, const Config& config) {
         const Vehicle& veh = vehicles[vehicle_index];
-        double current_lat = veh.current_lat;
-        double current_lng = veh.current_lng;
+        
+        // Track ID for matrix lookups
+        string current_id = veh.original_id;
         double current_time = veh.available_from;
         
         double total_dist = 0.0;
@@ -323,11 +261,19 @@ public:
 
         for (auto& node : sequence) {
             const Request& req = requests[node.emp_index];
-            double target_lat = (node.type == PICKUP) ? req.pickup_lat : req.drop_lat;
-            double target_lng = (node.type == PICKUP) ? req.pickup_lng : req.drop_lng;
+            
+            // Determine Target ID
+            string target_id;
+            if (node.type == PICKUP) {
+                target_id = req.original_id; // e.g., "E1"
+            } else {
+                target_id = "OFFICE"; // All employees drop at common location
+            }
 
-            double dist = haversine(current_lat, current_lng, target_lat, target_lng);
-            double travel_time = calculateTravelTime(dist, veh.avg_speed_kmph);
+            // === STRICT MATRIX DISTANCE & TIME ===
+            // Note: matrix.cpp handles asymmetry (row=current, col=target)
+            double dist = getDistanceFromMatrix(current_id, target_id);
+            double travel_time = (double)getTravelTimeFromMatrix(current_id, target_id, veh.avg_speed_kmph);
 
             total_dist += dist;
             current_time += travel_time;
@@ -344,8 +290,6 @@ public:
                 onboard.insert(node.emp_index);
 
                 if (current_load > veh.capacity) m.capacity_violation += (current_load - veh.capacity);
-                
-                // Strict Preference Check
                 if (req.vehicle_pref == "premium" && veh.category != "premium") m.capacity_violation += 10000; 
 
             } else { // DROP
@@ -355,8 +299,11 @@ public:
 
                 if (drop_time > req.latest_drop) m.time_window_violation += (drop_time - req.latest_drop);
 
-                double direct_dist = haversine(req.pickup_lat, req.pickup_lng, req.drop_lat, req.drop_lng);
-                double direct_time = calculateTravelTime(direct_dist, veh.avg_speed_kmph);
+                // Direct distance for Delay check: Pickup(E_id) -> Drop(OFFICE)
+                // Note: The logic handles asymmetry if matrix[E][OFFICE] != matrix[OFFICE][E]
+                double direct_dist = getDistanceFromMatrix(req.original_id, "OFFICE");
+                double direct_time = (double)getTravelTimeFromMatrix(req.original_id, "OFFICE", veh.avg_speed_kmph);
+
                 double actual_ride_time = drop_time - pickup_times[node.emp_index];
                 double delay = actual_ride_time - direct_time;
 
@@ -374,8 +321,8 @@ public:
             }
             if (current_load > max_allowed_sharing) m.capacity_violation += (current_load - max_allowed_sharing);
 
-            current_lat = target_lat;
-            current_lng = target_lng;
+            // Update current_id for next iteration
+            current_id = target_id; 
         }
         
         if (current_load != 0) m.capacity_violation += abs(current_load) * 100;
@@ -435,7 +382,6 @@ public:
     }
 
     void repair(Solution& sol) {
-        // Try removing infeasible parts
         for(int k=0; k<2; k++) {
             for (size_t r_idx = 0; r_idx < sol.routes.size(); ++r_idx) {
                 Route& route = sol.routes[r_idx];
@@ -444,7 +390,6 @@ public:
                 if (!m.feasible && !route.served_employees.empty()) {
                     vector<int> emps(route.served_employees.begin(), route.served_employees.end());
                     int emp_to_remove = emps[rng() % emps.size()];
-                    
                     vector<Node> new_seq;
                     for(auto& n : route.sequence) if(n.emp_index != emp_to_remove) new_seq.push_back(n);
                     route.sequence = new_seq;
@@ -454,7 +399,6 @@ public:
             }
         }
         
-        // Try re-inserting unassigned
         vector<int> unassigned = sol.unassigned_requests;
         sol.unassigned_requests.clear();
         shuffle(unassigned.begin(), unassigned.end(), rng);
@@ -468,7 +412,6 @@ public:
                 Route cur = sol.routes[r];
                 double base_score = cur.evaluate(vehicles, requests, config).objective_score;
 
-                // Simple insertion at end for speed in repair
                 vector<Node> temp = cur.sequence;
                 temp.push_back({PICKUP, emp_idx, 0,0});
                 temp.push_back({DROP, emp_idx, 0,0});
@@ -511,17 +454,14 @@ public:
 
             for (size_t r = 0; r < sol.routes.size(); ++r) {
                 Route cur = sol.routes[r];
-                
                 int n = cur.sequence.size();
                 for (int i = 0; i <= n; ++i) {
                     for (int j = i + 1; j <= n + 1; ++j) {
                         vector<Node> temp = cur.sequence;
                         temp.insert(temp.begin() + i, {PICKUP, emp_idx, 0,0});
                         temp.insert(temp.begin() + j, {DROP, emp_idx, 0,0});
-                        
                         cur.sequence = temp;
                         RouteMetrics m = cur.evaluate(vehicles, requests, config);
-                        
                         if (m.objective_score < best_score) {
                             best_score = m.objective_score;
                             best_r = r;
@@ -550,7 +490,6 @@ public:
                 improved = false;
                 double current_score = route.evaluate(vehicles, requests, config).objective_score;
                 vector<int> emps(route.served_employees.begin(), route.served_employees.end());
-                
                 for (int emp : emps) {
                     vector<Node> temp_seq;
                     for(auto& n : route.sequence) if(n.emp_index != emp) temp_seq.push_back(n);
@@ -561,11 +500,9 @@ public:
                             vector<Node> test = temp_seq;
                             test.insert(test.begin() + i, {PICKUP, emp, 0,0});
                             test.insert(test.begin() + j, {DROP, emp, 0,0});
-                            
                             Route r_test = route;
                             r_test.sequence = test;
                             double s = r_test.evaluate(vehicles, requests, config).objective_score;
-                            
                             if (s < current_score - 1e-5) {
                                 route.sequence = test;
                                 current_score = s;
@@ -585,19 +522,15 @@ public:
                 if(!sol.routes[i].served_employees.empty()) current_active.push_back(i);
             }
             if(current_active.empty()) break;
-
             int r_idx = current_active[rng() % current_active.size()];
             if(sol.routes[r_idx].served_employees.empty()) continue;
-
             auto it = sol.routes[r_idx].served_employees.begin();
             advance(it, rng() % sol.routes[r_idx].served_employees.size());
             int emp = *it;
-
             vector<Node> new_seq;
             for(auto& n : sol.routes[r_idx].sequence) if(n.emp_index != emp) new_seq.push_back(n);
             sol.routes[r_idx].sequence = new_seq;
             sol.routes[r_idx].served_employees.erase(emp);
-
             int dest = rng() % sol.routes.size();
             sol.routes[dest].sequence.push_back({PICKUP, emp, 0,0});
             sol.routes[dest].sequence.push_back({DROP, emp, 0,0});
@@ -609,24 +542,18 @@ public:
     Solution solve(int max_iterations, int& iterations_done) {
         Solution current_sol = constructionHeuristic();
         repair(current_sol);
-        
         current_sol.calculateTotalScore(vehicles, requests, config);
         Solution best_sol = current_sol;
-        
         int k = 1;
-        
         for (int iter = 0; iter < max_iterations; ++iter) {
             iterations_done = iter + 1;
             Solution s_prime = shaking(current_sol, k);
             localSearch(s_prime);
             repair(s_prime); 
-            
             s_prime.calculateTotalScore(vehicles, requests, config);
-
             if (s_prime.total_score < current_sol.total_score) {
                 current_sol = s_prime;
                 k = 1;
-                
                 if (current_sol.total_score < best_sol.total_score) {
                     best_sol = current_sol;
                     config.alpha *= 1.01;
@@ -645,42 +572,33 @@ public:
 // ==========================================
 
 int main(int argc, char **argv) {
-    if (argc < 4) {
-        cerr << "Usage: " << argv[0] << " <vehicles.csv> <requests.csv> <metadata.csv> [matrix.csv]" << endl;
+    if (argc < 5) {
+        cerr << "Usage: " << argv[0] << " <vehicles.csv> <requests.csv> <metadata.csv> <matrix.txt>" << endl;
         return 1;
     }
 
-    // START TIMER
     auto start_time = std::chrono::high_resolution_clock::now();
 
     Config config;
-    
-    // 1. Load Metadata
     cout << "Loading metadata from " << argv[3] << "..." << endl;
     loadMetadata(argv[3], config);
 
-    // 2. Load Vehicles and Requests
     cout << "Loading data..." << endl;
     vector<Vehicle> vehicles = loadVehicles(argv[1]);
     vector<Request> requests = loadRequests(argv[2], config.max_delays);
-
-    // 2. === CRITICAL STEP: ASSIGN VALUES TO GLOBAL VARIABLES ===
-    // Now that data is loaded, update the global N and V
-    N = requests.size();
-    V = vehicles.size();
-
-
-    // Optional: Load Matrix (placeholder for structure compliance)
-    if (argc > 4) {
-        cout << "Matrix file provided (logic skipped in this snippet): " << argv[4] << endl;
-        // loadMatrix(argv[4], ...); 
-        loadMatrix(argv[4], N + V);
-    }
 
     if (requests.empty() || vehicles.empty()) {
         cerr << "Error: No data loaded. Exiting." << endl;
         return 1;
     }
+
+    // === CRITICAL: CALCULATE MATRIX SIZE AND LOAD ===
+    N = requests.size();
+    V = vehicles.size();
+    int matrix_size = N + V + 1; // Emp + Veh + Office
+
+    cout << "Loading matrix from " << argv[4] << " (Expecting " << matrix_size << "x" << matrix_size << ")..." << endl;
+    loadMatrix(argv[4], matrix_size);
 
     cout << "=== Running VNS Solver ===" << endl;
     VNSSolver solver(requests, vehicles, config);
@@ -691,9 +609,7 @@ int main(int argc, char **argv) {
     cout << "Final Objective: " << fixed << setprecision(1) << final_solution.total_score << endl;
     cout << "Iterations: " << iterations_done << endl;
     
-    // OUTPUT GENERATION
     cout << "Generating CSV files..." << endl;
-    
     ofstream emp_file("output_employees.csv");
     ofstream veh_file("output_vehicle.csv");
 
@@ -704,11 +620,9 @@ int main(int argc, char **argv) {
         auto& r = final_solution.routes[i];
         if (r.served_employees.empty()) continue;
 
-        // Force update of times
-        r.evaluate(vehicles, requests, config);
+        r.evaluate(vehicles, requests, config); // Finalize times
 
         map<int, string> pickup_times;
-
         for (const auto& node : r.sequence) {
              string time_str = minToTime((int)node.arrival_time);
              
@@ -729,18 +643,10 @@ int main(int argc, char **argv) {
 
     emp_file.close();
     veh_file.close();
-
     cout << "Successfully created 'output_employees.csv' and 'output_vehicle.csv'" << endl;
     
-    if (!final_solution.unassigned_requests.empty()) {
-        cout << "WARNING: " << final_solution.unassigned_requests.size() << " unassigned requests!" << endl;
-    }
-
     auto end_time = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end_time - start_time;
-    
-    cout << "===========================================" << endl;
     cout << "Total Execution Time: " << fixed << setprecision(2) << elapsed.count() << " seconds" << endl;
-    cout << "===========================================" << endl;
     return 0;
 }
