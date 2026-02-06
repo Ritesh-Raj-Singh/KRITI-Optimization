@@ -45,6 +45,7 @@ json generate_matrix_file(const std::string& empData, const std::string& vehData
     std::vector<std::pair<double, double>> coords;
 
     // 1. Parse Employees (Pickups)
+    std::pair<double, double> hold;
     std::stringstream empSS(empData);
     std::string line;
     std::getline(empSS, line); 
@@ -53,6 +54,7 @@ json generate_matrix_file(const std::string& empData, const std::string& vehData
         auto c = splitLine(line);
         if (c.size() < 4) continue;
         coords.push_back({std::stod(c[2]), std::stod(c[3])});
+        hold = {std::stod(c[4]), std::stod(c[5])};
     }
 
     // 2. Parse Vehicles (Current Locations)
@@ -65,7 +67,21 @@ json generate_matrix_file(const std::string& empData, const std::string& vehData
         coords.push_back({std::stod(c[6]), std::stod(c[7])});
     }
 
-    // 3. Construct URL
+
+    // 3. Parse Ofice (final location)
+
+    coords.push_back(hold);
+
+
+    // std::stringstream offSS(empData);
+    // std::getline(empSS, line);
+    // std::getline(empSS, line);
+    // auto c = splitLine(line);
+    // std::cerr << "\n\n\n\n\n\n\n\n\\n";
+    // coords.push_back({std::stod(c[4]), std::stod(c[5])}); 
+    // std::cerr << c[4] << " " << c[5] << std::endl;
+
+    // 4. Construct URL
     if (coords.empty()) {
         result["status"] = "error";
         result["message"] = "No coordinates found in CSVs";
@@ -230,6 +246,8 @@ int main() {
 
         t1.join();
         t2.join();
+
+        
 
         // 5. Build Response
         json response;
