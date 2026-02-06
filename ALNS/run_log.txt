@@ -1,0 +1,12 @@
+Vehicle V01: E01(pickup) -> E01(drop) -> E06(pickup) -> E06(drop) -> E02(pickup) -> E04(pickup) -> E02(drop) -> E04(drop) -> End [Debug: Dist=27.1434 km, CostPerKm=10, RouteCost=271.434]
+Vehicle V02: E05(pickup) -> E03(pickup) -> E05(drop) -> E03(drop) -> End [Debug: Dist=7.08214 km, CostPerKm=14, RouteCost=99.15]
+Vehicle V03: E08(pickup) -> E07(pickup) -> E08(drop) -> E07(drop) -> End [Debug: Dist=10.2463 km, CostPerKm=18, RouteCost=184.434]
+Total Cost (Optimization Score): 416.085
+------------------------------------------------
+Total Distance (km): 44.4719
+Total Travel Cost (Money): 555.018
+Total Time (min): 91.9097
+Custom Objective (w1*Money + w2*Time): 416.085
+Writing outputs to: output_vehicle.csv
+Generated output_vehicle.csv and output_employees.csv
+Time taken: 282 ms

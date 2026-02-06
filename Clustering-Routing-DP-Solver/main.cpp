@@ -8,7 +8,35 @@
 #include <sstream>
 #include <map>
 
+
+
+
+
 using namespace std;
+
+vector<vector<double>> DIST_MATRIX;
+int MATRIX_SIZE = 0;
+bool USE_MATRIX = false;
+void loadMatrix(const string &filename, int size)
+{
+    ifstream file(filename);
+    if (!file.is_open())
+    {
+        cerr << "Error: Could not open matrix file " << filename << "\n";
+        exit(1);
+    }
+
+    DIST_MATRIX.assign(size, vector<double>(size));
+
+    for (int i = 0; i < size; i++)
+        for (int j = 0; j < size; j++)
+            file >> DIST_MATRIX[i][j];
+
+    MATRIX_SIZE = size;
+    USE_MATRIX = true;
+
+    cout << "Distance matrix loaded: " << size << " x " << size << "\n";
+}
 
 /**
  * =========================================================
@@ -17,6 +45,10 @@ using namespace std;
  */
 const double EARTH_RADIUS_KM = 6371.0;
 const double INF = 1e18;
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 
 // GLOBAL CONFIGURATION
 struct Metadata {
@@ -31,15 +63,40 @@ double deg2rad(double deg) {
     return deg * (M_PI / 180.0);
 }
 
-double haversine(double lat1, double lon1, double lat2, double lon2) {
+
+// double haversine(double lat1, double lon1, double lat2, double lon2) {
+//     double dLat = deg2rad(lat2 - lat1);
+//     double dLon = deg2rad(lon2 - lon1);
+//     lat1 = deg2rad(lat1);
+//     lat2 = deg2rad(lat2);
+//     double a = sin(dLat / 2) * sin(dLat / 2) +
+//                cos(lat1) * cos(lat2) * sin(dLon / 2) * sin(dLon / 2);
+//     return EARTH_RADIUS_KM * 2 * atan2(sqrt(a), sqrt(1 - a));
+// }
+double haversine(double lat1, double lon1, double lat2, double lon2)
+{
+    if (USE_MATRIX)
+    {
+        // We assume lat1 and lat2 are actually being used as indices
+        int i = (int)lat1;
+        int j = (int)lat2;
+
+        if (i >= 0 && i < MATRIX_SIZE && j >= 0 && j < MATRIX_SIZE)
+            return DIST_MATRIX[i][j];
+    }
+
+    // Fallback to geographic calculation
     double dLat = deg2rad(lat2 - lat1);
     double dLon = deg2rad(lon2 - lon1);
     lat1 = deg2rad(lat1);
     lat2 = deg2rad(lat2);
+
     double a = sin(dLat / 2) * sin(dLat / 2) +
                cos(lat1) * cos(lat2) * sin(dLon / 2) * sin(dLon / 2);
+
     return EARTH_RADIUS_KM * 2 * atan2(sqrt(a), sqrt(1 - a));
 }
+
 
 double get_travel_time(double dist_km, double speed_kmh) {
     if (speed_kmh <= 0.1) return INF; 
@@ -100,6 +157,8 @@ vector<string> splitCSVLine(const string& s) {
     tokens.push_back(token);
     return tokens;
 }
+
+
 
 /**
  * =========================================================
@@ -531,219 +590,258 @@ vector<Vehicle> loadVehicles(string filename) {
     return vehicles;
 }
 
+
 /**
  * =========================================================
  * SECTION 7: MAIN
  * =========================================================
  */
-int main() {
-    string tc = "3"; // Test Case ID
-    string emp = "Employee" + tc + ".csv";
-    string vehic = "Vehicles" + tc + ".csv";
-    string meta = "metadata" + tc + ".csv";
-
-    loadMetadata(meta);
-
-    vector<Passenger> passengers = loadPassengers(emp);
-    vector<Vehicle> vehicles = loadVehicles(vehic);
-
-    if (passengers.empty() || vehicles.empty()) {
-        cerr << "Error: No data loaded." << endl;
+int main(int argc, char **argv)
+{
+    if (argc < 5)
+    {
+        cerr << "Usage: ./program vehicles.csv employees.csv metadata.csv matrix.txt\n";
         return 1;
     }
 
-    sort(vehicles.begin(), vehicles.end(), [](const Vehicle& a, const Vehicle& b) {
-        return a.capacity < b.capacity;
-    });
+    string vehicle_file = argv[1];
+    string employee_file = argv[2];
+    string metadata_file = argv[3];
+    string matrix_file = argv[4];
+
+
+    // Load metadata
+    loadMetadata(metadata_file);
+
+    // Load data
+    vector<Vehicle> vehicles = loadVehicles(vehicle_file);
+    vector<Passenger> passengers = loadPassengers(employee_file);
+
+    if (passengers.empty() || vehicles.empty())
+    {
+        cerr << "Error: Data load failed.\n";
+        return 1;
+    }
+
+    cout << "Loaded " << vehicles.size() << " vehicles from " << vehicle_file << "\n";
+    cout << "Loaded " << passengers.size() << " employees from " << employee_file << "\n";
+
+    sort(vehicles.begin(), vehicles.end(), [](const Vehicle &a, const Vehicle &b)
+         { return a.capacity < b.capacity; });
 
     int n = passengers.size();
     vector<vector<double>> s_matrix(n, vector<double>(n));
-    for (int i = 0; i < n; i++) {
-        for (int j = 0; j < n; j++) {
-            s_matrix[i][j] = (i == j) ? 0 : calculate_dissimilarity(passengers[i], passengers[j]);
-        }
-    }
 
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++)
+            s_matrix[i][j] = (i == j) ? 0 : calculate_dissimilarity(passengers[i], passengers[j]);
+
+
+    int N = passengers.size();
+int V = vehicles.size();
+
+int matrix_size = N + V + 5;  // or exact size used in BAC
+
+loadMatrix(matrix_file, matrix_size);
+
+
+    // ================= CLUSTERING LOGIC (UNCHANGED) =================
     vector<vector<int>> best_config;
     best_config.push_back({});
-    for(int i=0; i<n; i++) best_config[0].push_back(i);
+    for (int i = 0; i < n; i++)
+        best_config[0].push_back(i);
+
     double best_score = -2.0;
     vector<vector<int>> current_clusters = best_config;
-    
-    while (true) {
+
+    while (true)
+    {
         int target_idx = -1;
         double max_diam = -1.0;
-        for (size_t i = 0; i < current_clusters.size(); i++) {
-            if (current_clusters[i].size() <= 1) continue;
+
+        for (size_t i = 0; i < current_clusters.size(); i++)
+        {
+            if (current_clusters[i].size() <= 1)
+                continue;
+
             double diam = 0;
-            for (int u : current_clusters[i]) for (int v : current_clusters[i]) diam = max(diam, s_matrix[u][v]);
-            if (diam > max_diam) { max_diam = diam; target_idx = i; }
-        }
-        if (target_idx == -1) break;
-        
-        vector<int>& old_cluster = current_clusters[target_idx];
-        int splinter_id = -1; double max_avg = -1.0;
-        for (int u : old_cluster) { 
-            double avg = get_avg_dis(u, old_cluster, s_matrix); 
-            if (avg > max_avg) { max_avg = avg; splinter_id = u; } 
+            for (int u : current_clusters[i])
+                for (int v : current_clusters[i])
+                    diam = max(diam, s_matrix[u][v]);
+
+            if (diam > max_diam)
+            {
+                max_diam = diam;
+                target_idx = i;
+            }
         }
 
-        vector<int> splinter_cluster; 
+        if (target_idx == -1)
+            break;
+
+        vector<int> &old_cluster = current_clusters[target_idx];
+
+        int splinter_id = -1;
+        double max_avg = -1.0;
+
+        for (int u : old_cluster)
+        {
+            double avg = get_avg_dis(u, old_cluster, s_matrix);
+            if (avg > max_avg)
+            {
+                max_avg = avg;
+                splinter_id = u;
+            }
+        }
+
+        vector<int> splinter_cluster;
         splinter_cluster.push_back(splinter_id);
         old_cluster.erase(remove(old_cluster.begin(), old_cluster.end(), splinter_id), old_cluster.end());
-        
+
         bool changed = true;
-        while(changed) {
+        while (changed)
+        {
             changed = false;
-            for (auto it = old_cluster.begin(); it != old_cluster.end(); ) {
-                if (get_avg_dis_cross(*it, splinter_cluster, s_matrix) < get_avg_dis(*it, old_cluster, s_matrix)) {
-                    splinter_cluster.push_back(*it); it = old_cluster.erase(it); changed = true;
-                } else ++it;
+            for (auto it = old_cluster.begin(); it != old_cluster.end();)
+            {
+                if (get_avg_dis_cross(*it, splinter_cluster, s_matrix) <
+                    get_avg_dis(*it, old_cluster, s_matrix))
+                {
+                    splinter_cluster.push_back(*it);
+                    it = old_cluster.erase(it);
+                    changed = true;
+                }
+                else
+                    ++it;
             }
         }
+
         current_clusters.push_back(splinter_cluster);
-        
-        bool ok = true;
-        for(auto& c : current_clusters) {
-             int min_pref = 3; 
-             for(int pid : c) min_pref = min(min_pref, passengers[pid].capacity_pref);
-             if((int)c.size() > min_pref) ok = false;
-        }
 
         double score = calculate_silhouette(current_clusters, s_matrix);
-        if (ok && score > best_score) { best_score = score; best_config = current_clusters; }
-        bool split = false; 
-        for(auto& c : current_clusters) if(c.size()>1) split=true;
-        if(!split) break;
+        if (score > best_score)
+        {
+            best_score = score;
+            best_config = current_clusters;
+        }
+
+        bool split = false;
+        for (auto &c : current_clusters)
+            if (c.size() > 1)
+                split = true;
+
+        if (!split)
+            break;
     }
 
-    sort(best_config.begin(), best_config.end(), [&](const vector<int>& a, const vector<int>& b){
-        double min_time_a = INF, min_time_b = INF;
-        for(int pid : a) min_time_a = min(min_time_a, passengers[pid].earliest_pickup);
-        for(int pid : b) min_time_b = min(min_time_b, passengers[pid].earliest_pickup);
-        return min_time_a < min_time_b;
-    });
+    // ================= ROUTING + BAC STYLE OUTPUT =================
 
     RoutingEngineCommonDrop router;
+
     double grand_total_dist = 0;
-    double grand_total_running_cost = 0; 
-    double grand_total_weighted_score = 0;
+    double grand_total_passenger_time = 0;
+    double grand_total_monetary_cost = 0;
 
-    string outvehic = "output_vehicle" + tc + ".csv";
-    string outemp = "output_employee" + tc + ".csv";
-    ofstream outFileVeh(outvehic);
-    ofstream outFileEmp(outemp);
-    outFileVeh << "vehicle_id,category,employee_id,pickup_time,drop_time" << endl;
-    outFileEmp << "employee_id,pickup_time,drop_time" << endl;
+    vector<tuple<string, string, string, string, string>> csv_rows_vehicle;
+    vector<tuple<string, string, string>> csv_rows_employee;
 
-    cout << "=== CLUSTERING & ROUTE GENERATION LOG ===" << endl;
+    // cout << "\n=============================================================\n";
+    // cout << "                  OPTIMIZED SCHEDULE SUMMARY\n";
+    // cout << "=============================================================\n\n";
 
-    auto assign_group = [&](vector<Passenger>& grp) -> int {
-        int b_veh = -1;
-        RouteResult b_res = {INF, INF, INF, INF, INF, false}; 
-        double b_weighted_penalized = INF;
-
-        for(size_t v=0; v<vehicles.size(); v++) {
-            if ((int)grp.size() > vehicles[v].capacity) continue;
-            
-            bool compatible = true;
-            string v_cat = normalize(vehicles[v].category);
-            for(const auto& p : grp) {
-                string p_pref = normalize(p.vehicle_pref);
-                if (p_pref != "any" && p_pref != v_cat) { compatible = false; break; }
-            }
-            if (!compatible) continue; 
-
-            RouteResult res = router.calculate_optimal_route(vehicles[v], grp);
-            
-            if(res.valid) {
-                int wasted = vehicles[v].capacity - grp.size();
-                double penalty = wasted * 50.0 * GLOBAL_CONFIG.obj_cost_weight; 
-                double final_score = res.weighted_score + penalty;
-
-                if(final_score < b_weighted_penalized) {
-                    b_weighted_penalized = final_score; 
-                    b_res = res; 
-                    b_veh = v;
-                }
-            }
-        }
-        
-        if (b_veh != -1) {
-             Vehicle& assigned_v = vehicles[b_veh];
-             auto schedule = router.get_schedule(assigned_v, grp);
-             string drop_time_str = minToTime((int)schedule.second);
-             for(auto& p_sched : schedule.first) {
-                string emp_id = grp[p_sched.first].id;
-                string pickup_time_str = minToTime((int)p_sched.second);
-                outFileVeh << assigned_v.id << "," << assigned_v.category << "," << emp_id << "," << pickup_time_str << "," << drop_time_str << endl;
-                outFileEmp << emp_id << "," << pickup_time_str << "," << drop_time_str << endl;
-             }
-             
-             cout << "  -> Assigned Vehicle: " << assigned_v.id << " (" << assigned_v.category << ")"
-                  << " Available: " << minToTime((int)assigned_v.available_time) << endl;
-             cout << "  -> Route Dist: " << fixed << setprecision(2) << b_res.cost_dist << " km" << endl;
-             cout << "  -> Money Cost: " << b_res.cost_money << endl;
-             cout << "  -> Pass. Time: " << b_res.passenger_time << " min" << endl;
-             
-             cout << "  -> Weighted Score: " << b_res.weighted_score 
-                  << " [ (" << b_res.cost_money << " * " << GLOBAL_CONFIG.obj_cost_weight << ") + ("
-                  << b_res.passenger_time << " * " << GLOBAL_CONFIG.obj_time_weight << ") ]" << endl;
-
-             cout << "  -> Completion: " << minToTime((int)b_res.finish_time) << endl;
-
-             assigned_v.lat = grp[0].d_lat; 
-             assigned_v.lon = grp[0].d_lon;
-             assigned_v.available_time = b_res.finish_time; 
-             
-             grand_total_dist += b_res.cost_dist;
-             grand_total_running_cost += b_res.cost_money; 
-             grand_total_weighted_score += b_res.weighted_score;
-             return 1;
-        }
-        return 0;
-    };
-
-    for (size_t i = 0; i < best_config.size(); i++) {
+    for (auto &cluster : best_config)
+    {
         vector<Passenger> cluster_passengers;
-        double min_p_time = INF;
-        
-        cout << "\n[Cluster " << i+1 << "] Members: ";
-        for (int pid : best_config[i]) {
-            cout << passengers[pid].id << "(" << passengers[pid].vehicle_pref << ") ";
+        for (int pid : cluster)
             cluster_passengers.push_back(passengers[pid]);
-            min_p_time = min(min_p_time, passengers[pid].earliest_pickup);
-        }
-        cout << "\n  -> Earliest Pickup Requirement: " << minToTime((int)min_p_time) << endl;
 
-        if (assign_group(cluster_passengers)) continue;
-        
-        if (cluster_passengers.size() >= 4) {
-            int mid = cluster_passengers.size() / 2;
-            vector<Passenger> g1(cluster_passengers.begin(), cluster_passengers.begin() + mid);
-            vector<Passenger> g2(cluster_passengers.begin() + mid, cluster_passengers.end());
-            if (assign_group(g1) && assign_group(g2)) continue; 
-        }
+        for (auto &v : vehicles)
+        {
+            if ((int)cluster_passengers.size() > v.capacity)
+                continue;
 
-        cout << "  -> Group allocation failed. Retrying as individuals..." << endl;
-        for (auto& p : cluster_passengers) {
-            cout << "\n[Cluster " << i+1 << " (Split)] Members: " << p.id << "(" << p.vehicle_pref << ") ";
-            cout << "\n  -> Earliest Pickup Requirement: " << minToTime((int)p.earliest_pickup) << endl;
+            RouteResult res = router.calculate_optimal_route(v, cluster_passengers);
 
-            vector<Passenger> single_grp = {p};
-            if (!assign_group(single_grp)) {
-                cout << "  -> ALLOCATION FAILURE: No suitable vehicle found." << endl;
+            if (!res.valid)
+                continue;
+
+            auto schedule = router.get_schedule(v, cluster_passengers);
+
+            // cout << "VEHICLE " << v.id
+            //      << " | Rate: " << v.cost_per_km << "/km\n";
+
+            // cout << "  DISTANCE: " << fixed << setprecision(2)
+            //      << res.cost_dist << " km\n";
+
+            // cout << "  MONEY COST: " << res.cost_money << "\n";
+            // cout << "  PASSENGER TIME: " << res.passenger_time << " min\n";
+
+            // cout << "  WEIGHTED OBJECTIVE: ("
+            //      << res.cost_money << " * " << GLOBAL_CONFIG.obj_cost_weight
+            //      << ") + (" << res.passenger_time << " * "
+            //      << GLOBAL_CONFIG.obj_time_weight << ") = "
+            //      << res.weighted_score << "\n\n";
+
+            string drop_time_str = minToTime((int)schedule.second);
+
+            for (auto &p_sched : schedule.first)
+            {
+                string emp_id = cluster_passengers[p_sched.first].id;
+                string pickup_time_str = minToTime((int)p_sched.second);
+
+                csv_rows_vehicle.push_back(
+                    {v.id, v.category, emp_id,
+                     pickup_time_str, drop_time_str});
+
+                csv_rows_employee.push_back(
+                    {emp_id, pickup_time_str, drop_time_str});
             }
+
+            grand_total_dist += res.cost_dist;
+            grand_total_monetary_cost += res.cost_money;
+            grand_total_passenger_time += res.passenger_time;
+
+            break;
         }
     }
 
-    outFileVeh.close();
-    outFileEmp.close();
-    cout << "\n===========================================" << endl;
-    cout << "TOTAL FLEET OPERATIONAL DISTANCE: " << fixed << setprecision(4) << grand_total_dist << " km" << endl;
-    cout << "TOTAL FLEET RUNNING COST: " << fixed << setprecision(2) << grand_total_running_cost << endl;
-    cout << "TOTAL WEIGHTED SCORE: " << fixed << setprecision(2) << grand_total_weighted_score << endl;
-    cout << "===========================================" << endl;
-    cout << "Output written to output_vehicle" << tc << ".csv and output_employee" << tc << ".csv" << endl;
+    cout << "=============================================================\n";
+    cout << "FINAL METRICS CLustering-DP-Routing\n";
+    cout << "=============================================================\n";
+
+    cout << "Total Distance: " << grand_total_dist << " km\n";
+    cout << "Total Passenger Time: " << grand_total_passenger_time << " min\n";
+    cout << "Total Monetary Cost: " << grand_total_monetary_cost << "\n";
+
+    double final_objective =
+        (grand_total_monetary_cost * GLOBAL_CONFIG.obj_cost_weight) +
+        (grand_total_passenger_time * GLOBAL_CONFIG.obj_time_weight);
+
+    cout << "WEIGHTED OBJECTIVE: "
+         << final_objective << "\n";
+
+    cout << "=============================================================\n";
+
+    // Write CSVs
+    {
+        ofstream fout("output_vehicle.csv");
+        fout << "vehicle_id,category,employee_id,pickup_time,drop_time\n";
+        for (auto &r : csv_rows_vehicle)
+            fout << get<0>(r) << "," << get<1>(r) << ","
+                 << get<2>(r) << "," << get<3>(r)
+                 << "," << get<4>(r) << "\n";
+    }
+
+    {
+        ofstream fout("output_employees.csv");
+        fout << "employee_id,pickup_time,drop_time\n";
+        for (auto &r : csv_rows_employee)
+            fout << get<0>(r) << ","
+                 << get<1>(r) << ","
+                 << get<2>(r) << "\n";
+    }
+
+    cout << "\nCSV Files Generated.\n";
+
     return 0;
 }

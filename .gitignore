@@ -1,1 +1,12 @@
 .vscode/
+matrix.txt
+vehicles.csv
+employees.csv
+metadata.csv
+baseline.csv
+osrm_raw.json
+server_app
+fvehicles.csv
+femployees.csv
+fmetadata.csv
+fbaseline.csv
