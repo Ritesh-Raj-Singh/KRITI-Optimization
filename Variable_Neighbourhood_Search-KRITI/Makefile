@@ -1,8 +1,8 @@
 # --- Variables ---
 CXX      = g++
 CXXFLAGS = -std=c++11 -Wall -O2
-TARGET   = main2
-SRC      = main2.cpp
+TARGET   = main_vns
+SRC      = main_vns.cpp
 
 # --- Targets ---
 
