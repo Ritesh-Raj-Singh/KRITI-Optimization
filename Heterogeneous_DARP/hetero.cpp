@@ -13,6 +13,8 @@
 #include <sstream>
 #include <fstream>
 #include <chrono>
+#include <filesystem> // <--- ADDED: Necessary for safer file handling
+
 #include "matrix.h"
 
 #ifndef M_PI
@@ -20,6 +22,7 @@
 #endif
 
 using namespace std;
+namespace fs = std::filesystem; // <--- ADDED: Namespace alias
 
 // Defined in matrix.cpp
 extern int N;
@@ -75,7 +78,6 @@ struct Request {
     int id;              
     string original_id;  
     int priority;
-    // Lat/Lng kept for file compatibility but NOT used for calculation
     double pickup_lat, pickup_lng;
     double drop_lat, drop_lng;
     int earliest_pickup; 
@@ -90,7 +92,6 @@ struct Vehicle {
     int capacity;
     double cost_per_km;
     double avg_speed_kmph;
-    // Lat/Lng kept for file compatibility but NOT used for calculation
     double current_lat, current_lng;
     int available_from; 
     string category;    
@@ -146,7 +147,10 @@ void loadMetadata(const string &filename, Config &config) {
 vector<Vehicle> loadVehicles(const string &filename) {
     vector<Vehicle> vehicles;
     ifstream file(filename);
-    if (!file.is_open()) exit(1);
+    if (!file.is_open()) {
+        cerr << "Failed to open vehicles file: " << filename << endl;
+        exit(1);
+    }
     string line;
     getline(file, line); 
     int sequential_id = 0; 
@@ -186,7 +190,10 @@ vector<Vehicle> loadVehicles(const string &filename) {
 vector<Request> loadRequests(const string &filename, const map<int, int> &priority_delays) {
     vector<Request> requests;
     ifstream file(filename);
-    if (!file.is_open()) exit(1);
+    if (!file.is_open()) {
+        cerr << "Failed to open employees file: " << filename << endl;
+        exit(1);
+    }
     string line;
     getline(file, line); 
     int sequential_id = 0; 
@@ -271,7 +278,6 @@ public:
             }
 
             // === STRICT MATRIX DISTANCE & TIME ===
-            // Note: matrix.cpp handles asymmetry (row=current, col=target)
             double dist = getDistanceFromMatrix(current_id, target_id);
             double travel_time = (double)getTravelTimeFromMatrix(current_id, target_id, veh.avg_speed_kmph);
 
@@ -299,8 +305,6 @@ public:
 
                 if (drop_time > req.latest_drop) m.time_window_violation += (drop_time - req.latest_drop);
 
-                // Direct distance for Delay check: Pickup(E_id) -> Drop(OFFICE)
-                // Note: The logic handles asymmetry if matrix[E][OFFICE] != matrix[OFFICE][E]
                 double direct_dist = getDistanceFromMatrix(req.original_id, "OFFICE");
                 double direct_time = (double)getTravelTimeFromMatrix(req.original_id, "OFFICE", veh.avg_speed_kmph);
 
@@ -573,19 +577,34 @@ public:
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        cerr << "Usage: " << argv[0] << " directory" << endl;
+        cerr << "Usage: " << argv[0] << " <directory>" << endl;
+        return 1;
+    }
+
+    // Convert input argument to a filesystem path for safety
+    fs::path base_dir = argv[1];
+
+    if (!fs::exists(base_dir)) {
+        cerr << "Error: Directory " << base_dir << " does not exist." << endl;
         return 1;
     }
 
     auto start_time = std::chrono::high_resolution_clock::now();
 
     Config config;
-    cout << "Loading metadata from " << argv[1] << "/metadata.csv..." << endl;
-    loadMetadata(argv[1] + string("/metadata.csv"), config);
+    
+    // Construct paths using filesystem (safer than string concatenation)
+    fs::path metadata_path = base_dir / "metadata.csv";
+    fs::path vehicles_path = base_dir / "vehicles.csv";
+    fs::path employees_path = base_dir / "employees.csv";
+    fs::path matrix_path = base_dir / "matrix.txt";
+
+    cout << "Loading metadata from " << metadata_path << "..." << endl;
+    loadMetadata(metadata_path.string(), config);
 
     cout << "Loading data..." << endl;
-    vector<Vehicle> vehicles = loadVehicles(argv[1] + string("/vehicles.csv"));
-    vector<Request> requests = loadRequests(argv[1] + string("/employees.csv"), config.max_delays);
+    vector<Vehicle> vehicles = loadVehicles(vehicles_path.string());
+    vector<Request> requests = loadRequests(employees_path.string(), config.max_delays);
 
     if (requests.empty() || vehicles.empty()) {
         cerr << "Error: No data loaded. Exiting." << endl;
@@ -597,8 +616,8 @@ int main(int argc, char **argv) {
     V = vehicles.size();
     int matrix_size = N + V + 1; // Emp + Veh + Office
 
-    cout << "Loading matrix from " << argv[1] << "/matrix.txt (Expecting " << matrix_size << "x" << matrix_size << ")..." << endl;
-    loadMatrix(argv[1] + string("/matrix.txt"), matrix_size);
+    cout << "Loading matrix from " << matrix_path << " (Expecting " << matrix_size << "x" << matrix_size << ")..." << endl;
+    loadMatrix(matrix_path.string(), matrix_size);
 
     cout << "=== Running VNS Solver ===" << endl;
     VNSSolver solver(requests, vehicles, config);
@@ -609,11 +628,31 @@ int main(int argc, char **argv) {
     cout << "Final Objective: " << fixed << setprecision(1) << final_solution.total_score << endl;
     cout << "Iterations: " << iterations_done << endl;
     
+    // === OUTPUT GENERATION (FIXED FOR DIRECTORY SAFETY) ===
     cout << "Generating CSV files..." << endl;
-    ofstream emp_file(string(argv[1]) + string("/Heterogeneous_DARP/output_employees.csv"));
-    ofstream veh_file(string(argv[1]) + string("/Heterogeneous_DARP/output_vehicle.csv"));
-    cout << "Writing to: " << string(argv[1]) + string("/Heterogeneous_DARP/output_employees.csv") << endl;
-    cout << "Writing to: " << string(argv[1]) + string("/Heterogeneous_DARP/output_vehicle.csv") << endl;
+    
+    // Define output folder inside the temp dir
+    fs::path output_dir = base_dir / "Heterogeneous_DARP";
+    
+    // CRITICAL FIX: Create the directory if it doesn't exist
+    if (!fs::exists(output_dir)) {
+        fs::create_directories(output_dir);
+    }
+
+    fs::path emp_out_path = output_dir / "output_employees.csv";
+    fs::path veh_out_path = output_dir / "output_vehicle.csv";
+
+    ofstream emp_file(emp_out_path);
+    ofstream veh_file(veh_out_path);
+
+    if (!emp_file.is_open() || !veh_file.is_open()) {
+        cerr << "Error: Could not open output files for writing at " << output_dir << endl;
+        return 1;
+    }
+
+    cout << "Writing to: " << emp_out_path << endl;
+    cout << "Writing to: " << veh_out_path << endl;
+
     emp_file << "employee_id,pickup_time,drop_time" << endl;
     veh_file << "vehicle_id,category,employee_id,pickup_time,drop_time" << endl;
 
