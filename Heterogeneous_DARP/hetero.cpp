@@ -576,12 +576,13 @@ public:
 // ==========================================
 
 int main(int argc, char **argv) {
+    // 1. Check for single argument (the temp directory)
     if (argc < 2) {
-        cerr << "Usage: " << argv[0] << " <directory>" << endl;
+        cerr << "Usage: " << argv[0] << " <temp_directory_path>" << endl;
         return 1;
     }
 
-    // Convert input argument to a filesystem path for safety
+    // 2. Set up filesystem path
     fs::path base_dir = argv[1];
 
     if (!fs::exists(base_dir)) {
@@ -593,10 +594,10 @@ int main(int argc, char **argv) {
 
     Config config;
     
-    // Construct paths using filesystem (safer than string concatenation)
+    // 3. Define Input Paths (All inside base_dir)
     fs::path metadata_path = base_dir / "metadata.csv";
     fs::path vehicles_path = base_dir / "vehicles.csv";
-    fs::path employees_path = base_dir / "employees.csv";
+    fs::path employees_path = base_dir / "employees.csv"; 
     fs::path matrix_path = base_dir / "matrix.txt";
 
     cout << "Loading metadata from " << metadata_path << "..." << endl;
@@ -628,25 +629,19 @@ int main(int argc, char **argv) {
     cout << "Final Objective: " << fixed << setprecision(1) << final_solution.total_score << endl;
     cout << "Iterations: " << iterations_done << endl;
     
-    // === OUTPUT GENERATION (FIXED FOR DIRECTORY SAFETY) ===
+    // === 4. OUTPUT GENERATION (DIRECTLY IN TEMP DIR) ===
     cout << "Generating CSV files..." << endl;
     
-    // Define output folder inside the temp dir
-    fs::path output_dir = base_dir / "Heterogeneous_DARP";
-    
-    // CRITICAL FIX: Create the directory if it doesn't exist
-    if (!fs::exists(output_dir)) {
-        fs::create_directories(output_dir);
-    }
-
-    fs::path emp_out_path = output_dir / "output_employees.csv";
-    fs::path veh_out_path = output_dir / "output_vehicle.csv";
+    // CHANGED: No longer creating "Heterogeneous_DARP" folder.
+    // Saving directly to the temp directory provided in argv[1].
+    fs::path emp_out_path = base_dir / "output_employees.csv";
+    fs::path veh_out_path = base_dir / "output_vehicle.csv";
 
     ofstream emp_file(emp_out_path);
     ofstream veh_file(veh_out_path);
 
     if (!emp_file.is_open() || !veh_file.is_open()) {
-        cerr << "Error: Could not open output files for writing at " << output_dir << endl;
+        cerr << "Error: Could not open output files for writing at " << base_dir << endl;
         return 1;
     }
 
