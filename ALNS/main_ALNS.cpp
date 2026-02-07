@@ -6,9 +6,10 @@
 #include "Feasibility.h" 
 #include "Compatibility.h"
 #include "Distance.h"
+#include"mapper.h"
 #include <iomanip>
-
 #include<chrono>
+#include<map>
 
 
 bool checkBatchFits(const std::vector<int> &batch, int nextId, const Vehicle &v, const std::vector<Employee> &emp, double currentT, double currentX, double currentY,const Metadata& meta)
@@ -275,27 +276,6 @@ void generateOutputFiles(const std::vector<Route> &solution, const std::vector<V
     std::cout << "Generated output_vehicle.csv and output_employees.csv\n";
 }
 
-int getVehRank(const std::string& pref) {
-    if (pref == "premium") return 0; // Highest priority
-    if (pref == "any")     return 1;
-    return 2;                       // "normal" or anything else
-}
-
-void sortEmployees(std::vector<Employee>& emp) {
-    std::sort(emp.begin(), emp.end(), [](const Employee& a, const Employee& b) {
-        int rankA = getVehRank(a.vehiclePref);
-        int rankB = getVehRank(b.vehiclePref);
-        
-        if (rankA != rankB) {
-            return rankA < rankB;
-        }
-        // Optional: Secondary sort by ID to keep the sort stable/predictable
-        return a.id < b.id; 
-    });
-}
-
-
-
 
 int main(int argc, char **argv)
 {
@@ -318,19 +298,17 @@ int main(int argc, char **argv)
     }
 
     Metadata meta;
+
     if(argc>=4)  meta = readMetadata(argv[3]);
-    else std::cout<<"Using default values for metadata which are of test case 1\n";
-
-
-    // sorting resulted in vain
-//     sortEmployees(employees);
-//     std::sort(vehicles.begin(), vehicles.end(), [](const Vehicle& a, const Vehicle& b) {
-//     if (a.premium != b.premium) {
-//         return a.premium > b.premium; // true (1) comes before false (0)
-//     }
-//     else if (a.startTime!=b.startTime) return a.startTime < b.startTime; // Secondary sort to keep it deterministic
-//     else return a.id < b.id;
-// });
+    readDist(argv[4],(int)(employees.size()+vehicles.size())+1);
+    int idx=0;
+    for(int i=0;i<employees.size();i++){
+        mappy[{employees[i].x,employees[i].y}]=idx++;
+    }
+       for(int i=0;i<vehicles.size();i++){
+        mappy[{vehicles[i].x,vehicles[i].y}]=idx++;
+    }
+    mappy[{employees[0].destX,employees[0].destY}]=idx;
 
     auto solution = solveALNS(employees, vehicles, meta);
 
@@ -362,7 +340,7 @@ int main(int argc, char **argv)
         std::cout << "\n";
         totalCost += routeCost(r, vehicles[r.vehicleId], employees, meta);
     }
-    std::cout << "Total Cost (Optimization Score): " << totalCost << "\n";
+    std::cout << "Total Cost (Optimization Score) in ALNS: " << totalCost << "\n";
 
     std::cout << "------------------------------------------------\n";
     std::cout << "Total Distance (km): " << globalDist << "\n";

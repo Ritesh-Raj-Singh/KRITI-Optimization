@@ -4,7 +4,6 @@
 #include "Employee.h"
 #include "Vehicle.h"
 
-
 struct Metadata {
     // Weights
     double objectiveCostWeight = 0.7;
@@ -21,3 +20,4 @@ struct Metadata {
 std::vector<Employee> readEmployees(const std::string& path);
 std::vector<Vehicle> readVehicles(const std::string& path);
 Metadata readMetadata(const std::string& path);
+void readDist( const std::string& filename,int max_size);

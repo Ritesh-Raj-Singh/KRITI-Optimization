@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include "mapper.h"
 
 static double parseTime(const std::string& tStr) {
     size_t colon = tStr.find(':');
@@ -120,6 +121,37 @@ std::vector<Vehicle> readVehicles(const std::string& path) {
         data.push_back(v);
     }
     return data;
+}
+
+
+    
+// const int MAX_SIZE = 250;
+
+/**
+ * Reads values from a file into a static 250x250 array.
+ * Values are read sequentially until the array is full.
+ */
+void readDist( const std::string& filename,int MAX_SIZE) {
+    std::ifstream file(filename);
+
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << std::endl;
+        return;
+    }
+
+    for (int i = 0; i < MAX_SIZE; ++i) {
+        for (int j = 0; j < MAX_SIZE; ++j) {
+            // Attempt to read the next double
+            if (!(file >> path_len[i][j])) {
+                // If the file ends or contains non-numeric data before we hit 250*250
+                std::cerr << "Warning: Reached end of file before filling the matrix." << std::endl;
+                return;
+            }
+        }
+    }
+
+    file.close();
+    std::cout << "Successfully loaded " << MAX_SIZE << "x" << MAX_SIZE << " matrix." << std::endl;
 }
 
 Metadata readMetadata(const std::string& path) {

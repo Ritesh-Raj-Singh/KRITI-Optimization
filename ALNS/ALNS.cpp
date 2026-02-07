@@ -4,7 +4,7 @@
 #include "CostFunction.h"
 #include "OperatorStats.h"
 #include "OperatorSelect.h"
-
+#include<map>
 #include <cmath>
 #include <random>
 #include <vector>
