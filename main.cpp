@@ -167,7 +167,7 @@ json generate_matrix_file(const std::string& empData, const std::string& vehData
         outMatrix.clear();
 
         // Write dimensions to file
-        txtOut << matrixJson.size() << " " << matrixJson[0].size() << "\n";
+        // txtOut << matrixJson.size() << " " << matrixJson[0].size() << "\n";
 
         for (const auto &row : matrixJson) {
             std::vector<double> rowVec;
