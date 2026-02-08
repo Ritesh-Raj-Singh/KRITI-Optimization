@@ -149,7 +149,7 @@ std::vector<Route> solveALNS(
         // ----- Cooling -----
         T *= 0.999;
 
-        if (it % 100 == 0) {
+        if (it % 200 == 0) {
             for (auto& o : dStats) {
                 if (o.uses > 0) {
                     o.weight = 0.8 * o.weight + 0.2 * (o.score / o.uses);
@@ -170,4 +170,5 @@ std::vector<Route> solveALNS(
 
     return bestGlobal.sol;
 }
+
 
