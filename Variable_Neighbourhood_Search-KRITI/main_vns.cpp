@@ -10,18 +10,31 @@
 #include <iomanip>
 #include <limits>
 #include <random>
-#include "matrix.h"
-#include <fstream>
-#include <iostream>
-#include <cmath>
 
-// DEFINITIONS (one and only one)
+using namespace std;
+
+// --- Constants ---
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+const double R_EARTH = 6371.0;
+const double INF = numeric_limits<double>::max();
+const double PENALTY_UNASSIGNED = 1000000.0;
+const double PENALTY_CONSTRAINT = 100000.0;
+
+// Global Settings (Loaded from metadata.csv)
+double WEIGHT_COST = 0.7;
+double WEIGHT_TIME = 0.3;
+map<int, int> PRIORITY_DELAYS; // Stores max delay per priority level
+
+// --- Matrix Definitions ---
 int N = 0;
 int V = 0;
 std::vector<std::vector<double>> matrix;
+
 void loadMatrix(const std::string &filename, int size)
 {
-
     matrix.assign(size, std::vector<double>(size));
 
     std::ifstream fin(filename);
@@ -44,7 +57,7 @@ int convert(const std::string &a)
     if(a[0] == 'V')
         return N + std::stoi(a.substr(1)) - 1;
 
-    // OFFICE / DROP
+    // OFFICE / DROP (Fallthrough for any other string like "OFFICE")
     return N + V;
 }
 
@@ -53,81 +66,17 @@ double getDistanceFromMatrix(const std::string &a, const std::string &b)
     return matrix[convert(a)][convert(b)];
 }
 
-int getTravelTimeFromMatrix(const std::string &a,
-    const std::string &b,
-    double speed_kmh)
+int getTravelTimeFromMatrix(const std::string &a, const std::string &b, double speed_kmh)
 {
     double d = getDistanceFromMatrix(a, b);
     return (d < 0.005) ? 0 : std::ceil((d / speed_kmh) * 60.0);
 }
-// Ensure M_PI is defined
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
-using namespace std;
-
-// --- Constants ---
-const double R_EARTH = 6371.0;
-const double INF = numeric_limits<double>::max();
-const double PENALTY_UNASSIGNED = 1000000.0;
-const double PENALTY_CONSTRAINT = 100000.0;
-
-// Global Settings (Loaded from metadata.csv)
-double WEIGHT_COST = 0.7;
-double WEIGHT_TIME = 0.3;
-map<int, int> PRIORITY_DELAYS; // Stores max delay per priority level
+// --- Data Structures ---
 
 struct Point {
     double lat, lng;
 };
-
-// --- Helper Functions ---
-
-// Calculate Haversine distance in km
-double haversine(Point p1, Point p2) {
-    double phi1 = p1.lat * M_PI / 180.0;
-    double phi2 = p2.lat * M_PI / 180.0;
-    double dphi = (p2.lat - p1.lat) * M_PI / 180.0;
-    double dlambda = (p2.lng - p1.lng) * M_PI / 180.0;
-    double a = sin(dphi / 2) * sin(dphi / 2) +
-        cos(phi1) * cos(phi2) * sin(dlambda / 2) * sin(dlambda / 2);
-    double c = 2 * atan2(sqrt(a), sqrt(1 - a));
-    return R_EARTH * c;
-}
-
-// Parse "HH:MM" string to minutes from midnight
-int parseTime(string t_str) {
-    if(t_str.empty()) return 0;
-    int h, m;
-    char colon;
-    stringstream ss(t_str);
-    ss >> h >> colon >> m;
-    return h * 60 + m;
-}
-
-// Format minutes to "HH:MM"
-string formatTime(int minutes) {
-    int h = minutes / 60;
-    int m = minutes % 60;
-    stringstream ss;
-    ss << setfill('0') << setw(2) << h << ":" << setw(2) << m;
-    return ss.str();
-}
-
-// Split string by delimiter
-vector<string> split(const string &s, char delimiter) {
-    vector<string> tokens;
-    string token;
-    istringstream tokenStream(s);
-    while(getline(tokenStream, token, delimiter)) {
-        if(!token.empty() && token.back() == '\r') token.pop_back(); // Handle Windows line endings
-        tokens.push_back(token);
-    }
-    return tokens;
-}
-
-// --- Data Structures ---
 
 struct Request {
     string id;
@@ -173,6 +122,39 @@ map<string, Vehicle> vehicles;
 vector<string> req_ids;
 vector<string> veh_ids;
 
+// --- Helper Functions ---
+
+// Parse "HH:MM" string to minutes from midnight
+int parseTime(string t_str) {
+    if(t_str.empty()) return 0;
+    int h, m;
+    char colon;
+    stringstream ss(t_str);
+    ss >> h >> colon >> m;
+    return h * 60 + m;
+}
+
+// Format minutes to "HH:MM"
+string formatTime(int minutes) {
+    int h = minutes / 60;
+    int m = minutes % 60;
+    stringstream ss;
+    ss << setfill('0') << setw(2) << h << ":" << setw(2) << m;
+    return ss.str();
+}
+
+// Split string by delimiter
+vector<string> split(const string &s, char delimiter) {
+    vector<string> tokens;
+    string token;
+    istringstream tokenStream(s);
+    while(getline(tokenStream, token, delimiter)) {
+        if(!token.empty() && token.back() == '\r') token.pop_back(); // Handle Windows line endings
+        tokens.push_back(token);
+    }
+    return tokens;
+}
+
 // --- File Loading ---
 
 void loadMetadata(const string &ok) {
@@ -192,7 +174,6 @@ void loadMetadata(const string &ok) {
         if(key == "objective_cost_weight") WEIGHT_COST = stod(val);
         else if(key == "objective_time_weight") WEIGHT_TIME = stod(val);
         else if(key.find("priority_") != string::npos && key.find("_max_delay_min") != string::npos) {
-            // Extract priority number from "priority_1_max_delay_min"
             int p = stoi(key.substr(9, 1));
             PRIORITY_DELAYS[p] = stoi(val);
         }
@@ -225,6 +206,8 @@ void loadEmployees(const string &ok) {
         requests[r.id] = r;
         req_ids.push_back(r.id);
     }
+    // Update N for matrix logic
+    N = req_ids.size();
     file.close();
 }
 
@@ -252,6 +235,8 @@ void loadVehicles(const string &ok) {
         vehicles[v.id] = v;
         veh_ids.push_back(v.id);
     }
+    // Update V for matrix logic
+    V = veh_ids.size();
     file.close();
 }
 
@@ -262,17 +247,25 @@ EvalResult evaluateRoute(const string &v_id, const vector<Step> &route) {
     EvalResult res = { 0.0, 0.0, 0.0 };
 
     double current_time = v.start_time;
-    Point current_loc = v.start_loc;
+    // Track the LAST location ID (initially the vehicle ID)
+    string last_location_id = v_id;
+
     int current_load = 0;
     set<string> passengers_on_board;
     map<string, double> pickup_times;
 
     for(const auto &step : route) {
         Request r = requests[step.req_id];
-        Point target = (step.type == 1) ? r.pickup : r.drop;
 
-        // double dist = haversine(current_loc, target);
-        double dist = (step.type == 1 ? getDistanceFromMatrix(v_id, step.req_id) : getDistanceFromMatrix(v_id, "y"));
+        // Determine Target: If Type 1 (Pickup) -> Employee ID; If Type 2 (Drop) -> "OFFICE"
+        string target_location_id = (step.type == 1) ? step.req_id : "OFFICE";
+
+        // Calculate distance from PREVIOUS location to CURRENT target
+        double dist = getDistanceFromMatrix(last_location_id, target_location_id);
+
+        // Update last location for the next iteration
+        last_location_id = target_location_id;
+
         double travel_time = dist / v.speed_km_min;
         double arrival_time = current_time + travel_time;
         double start_service_time = arrival_time;
@@ -316,7 +309,6 @@ EvalResult evaluateRoute(const string &v_id, const vector<Step> &route) {
 
         res.monetary_cost += dist * v.cost_per_km;
         current_time = start_service_time;
-        current_loc = target;
     }
     return res;
 }
@@ -456,8 +448,9 @@ int main(int argc, char **argv) {
     loadEmployees(argv[2]);
     loadMetadata(argv[3]);
 
-    loadMatrix(argv[4], (int)veh_ids.size() + req_ids.size() + 1);
-
+    // N and V are set inside loadEmployees and loadVehicles
+    // Matrix size = N (employees) + V (vehicles) + 1 (Office)
+    loadMatrix(argv[4], N + V + 1);
 
     if(req_ids.empty() || veh_ids.empty()) {
         cerr << "Error: No data loaded. Check filenames (employees.csv, vehicles.csv)." << endl;
@@ -492,20 +485,64 @@ int main(int argc, char **argv) {
         }
     }
 
+    // --- Calculate Final Stats ---
     double final_cost = 0, final_time = 0;
     for(auto const &entry : best.routes) {
         EvalResult res = evaluateRoute(entry.first, entry.second);
         final_cost += res.monetary_cost;
         final_time += res.passenger_time;
     }
-    cout << calculateObjective(best) << '\n';
-    // --- Output Generation ---
+    double final_obj = calculateObjective(best);
+
+    // --- Console Output (Requested Format) ---
+    cout << "\n=== Optimized Schedule ===" << endl;
+    cout << "Final Objective: " << fixed << setprecision(3) << final_obj << endl;
+    cout << "Total Monetary Cost: " << final_cost << endl;
+    cout << "Total Passenger Time: " << final_time << " min" << endl;
+    cout << "Unassigned Requests: " << best.unassigned.size() << endl;
+
+    for(const string &vid : veh_ids) {
+        if(best.routes[vid].empty()) continue;
+
+        Vehicle v = vehicles[vid];
+        cout << "\nVehicle " << v.id << " (" << v.category << "):" << endl;
+
+        double cur_time = v.start_time;
+        string last_location_id = vid; // Start at vehicle location
+
+        for(const auto &step : best.routes[vid]) {
+            Request r = requests[step.req_id];
+
+            // Determine target and distance
+            string target_location_id = (step.type == 1) ? step.req_id : "OFFICE";
+            double dist = getDistanceFromMatrix(last_location_id, target_location_id);
+            last_location_id = target_location_id; // Update location
+
+            double travel = dist / v.speed_km_min;
+            double arrival = cur_time + travel;
+
+            if(step.type == 1) { // PICKUP
+                double start = max(arrival, (double)r.e_pickup);
+                cur_time = start;
+                cout << "  [PICKUP] " << r.id << " @ " << formatTime((int)start) << endl;
+            }
+            else { // DROP
+                cur_time = arrival;
+                int max_delay = PRIORITY_DELAYS[r.priority];
+                int limit_time = r.l_drop + max_delay;
+
+                cout << "  [DROP  ] " << r.id << " @ " << formatTime((int)arrival)
+                    << " (Limit: " << formatTime(limit_time) << ")" << endl;
+            }
+        }
+    }
+
+    // --- CSV Generation ---
 
     // 1. Vehicle-wise Output CSV
     ofstream outFileVeh("vehicle_output.csv");
     outFileVeh << "vehicle_id,category,employee_id,pickup_time,drop_time" << endl;
 
-    // Temporary storage for Employee-wise Output to avoid re-calculation
     struct EmpRecord {
         string emp_id;
         string pickup_time;
@@ -517,18 +554,17 @@ int main(int argc, char **argv) {
         if(best.routes[vid].empty()) continue;
         Vehicle v = vehicles[vid];
         double cur_time = v.start_time;
-        Point cur_loc = v.start_loc;
-        map<string, string> pickup_times_str;
+        string last_location_id = vid;
 
-        // Simulate route to capture exact times
         map<string, int> p_times;
         map<string, int> d_times;
 
         for(const auto &step : best.routes[vid]) {
             Request r = requests[step.req_id];
-            Point target = (step.type == 1) ? r.pickup : r.drop;
-            //double dist = haversine(cur_loc, target);
-            double dist = (step.type == 1 ? getDistanceFromMatrix(vid, step.req_id) : getDistanceFromMatrix(vid, "y"));
+            string target_location_id = (step.type == 1) ? step.req_id : "OFFICE";
+            double dist = getDistanceFromMatrix(last_location_id, target_location_id);
+            last_location_id = target_location_id;
+
             double travel = dist / v.speed_km_min;
             double arrival = cur_time + travel;
 
@@ -541,10 +577,8 @@ int main(int argc, char **argv) {
                 d_times[r.id] = (int)arrival;
                 cur_time = arrival;
             }
-            cur_loc = target;
         }
 
-        // Write to file (Fixing the loop to be compatible with C++11)
         for(auto const &entry : p_times) {
             string eid = entry.first;
             int p_time = entry.second;
@@ -553,12 +587,10 @@ int main(int argc, char **argv) {
             outFileVeh << vid << "," << v.category << "," << eid << ","
                 << formatTime(p_time) << "," << formatTime(d_time) << endl;
 
-            // Save for employee output
             empRecords[eid] = { eid, formatTime(p_time), formatTime(d_time) };
         }
     }
     outFileVeh.close();
-    cout << "Generated vehicle_output.csv" << endl;
 
     // 2. Employee-wise Output CSV
     ofstream outFileEmp("employee_output.csv");
@@ -569,7 +601,6 @@ int main(int argc, char **argv) {
             << entry.second.drop_time << endl;
     }
     outFileEmp.close();
-    cout << "Generated employee_output.csv" << endl;
 
     return 0;
 }

@@ -1,24 +1,40 @@
-# --- Variables ---
-CXX      = g++
-CXXFLAGS = -std=c++11 -Wall -O2
-TARGET   = main_vns
-SRC      = main_vns.cpp matrix.cpp
+# ---------------- CONFIGURATION ----------------
+# Compiler Settings
+CXX      := g++
+# Flags: C++17 is required for your code. -O3 for optimization.
+CXXFLAGS := -std=c++17 -O3 -Wall -pthread
 
-# --- Targets ---
+# Target Executable Name
+# IMPORTANT: If this is the "Branch-And-Cut" folder, keep it as main_BAC
+# If this is the "ALNS" folder, change it to main_ALNS
+TARGET   := main_vns
 
-# Default target: Compile the program
+# ---------------- AUTOMATION ----------------
+# 1. Automatically find all .cpp files in this folder
+# (e.g., main.cpp, Solver.cpp, GraphBuilder.cpp, utils.cpp, matrix.cpp)
+SRCS     := $(wildcard *.cpp)
+
+# 2. Generate corresponding .o file names
+OBJS     := $(SRCS:.cpp=.o)
+
+# ---------------- RULES ----------------
+
+# Default Rule: Build the executable
 all: $(TARGET)
 
-# Rule to link the executable
-$(TARGET): $(SRC)
-	$(CXX) $(CXXFLAGS) $(SRC) -o $(TARGET)
+# Link Step: Combine all .o files into the executable
+$(TARGET): $(OBJS)
+	@echo "[$(TARGET)] Linking..."
+	$(CXX) $(CXXFLAGS) -o $(TARGET) $(OBJS)
 
-# Rule to run the program
-# Usage: make run
-# NOTE: Ensure the CSV files exist in the folder before running this
-run: $(TARGET)
-	./$(TARGET) vehicles.csv employees.csv metadata.csv distance_matrix.csv
+# Compile Step: Turn .cpp into .o
+%.o: %.cpp
+	@echo "[$(TARGET)] Compiling $<..."
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# Clean up build files and output CSVs
+# Clean up build files and generated CSVs
 clean:
-	del $(TARGET).exe vehicle_output.csv employee_output.csv 2>NUL || rm -f $(TARGET) $(TARGET).exe vehicle_output.csv employee_output.csv
+	@echo "[$(TARGET)] Cleaning..."
+	rm -f $(OBJS) $(TARGET) output_vehicle.csv output_employees.csv run_log.txt
+
+.PHONY: all clean
