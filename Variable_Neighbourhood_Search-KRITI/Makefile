@@ -1,7 +1,7 @@
 # ---------------- CONFIGURATION ----------------
 # Compiler Settings
 CXX      := g++
-# Flags: C++17 is required for your code. -O3 for optimization.
+# Flags:  C++17 is required for your code. -O3 for optimization.
 CXXFLAGS := -std=c++17 -O3 -Wall -pthread
 
 # Target Executable Name
