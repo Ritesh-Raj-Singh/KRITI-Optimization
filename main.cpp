@@ -299,10 +299,10 @@ int main() {
        
 
         std::thread t1([&](){ alns_res = run_solver("ALNS", "main_ALNS", args, reqDir); });
-        // std::thread t2([&](){ bac_res = run_solver("Branch-And-Cut", "main_BAC", args, reqDir); });
+        std::thread t2([&](){ bac_res = run_solver("Branch-And-Cut", "main_BAC", args, reqDir); });
         std::thread t3([&](){ crds_res = run_solver("Clustering-Routing-DP-Solver", "crdp", args, reqDir); });
         std::thread t4([&](){ hd_res = run_solver("Heterogeneous_DARP", "hetero", args, reqDir); });
-        // std::thread t5([&](){ vnsk_res = run_solver("Variable_Neighbourhood_Search-KRITI", "main_vns", args, reqDir); });
+        std::thread t5([&](){ vnsk_res = run_solver("Variable_Neighbourhood_Search-KRITI", "main_vns", args, reqDir); });
 
         t1.join();
         // t2.join();
@@ -323,12 +323,12 @@ int main() {
             {"csv_employee", alns_res.output_employee}
         };
 
-        // response["results"]["BAC"] = {
-        //     {"status", bac_res.status},
-        //     {"logs", bac_res.logs},
-        //     {"csv_vehicle", bac_res.output_vehicle},
-        //     {"csv_employee", bac_res.output_employee}
-        // };
+        response["results"]["BAC"] = {
+            {"status", bac_res.status},
+            {"logs", bac_res.logs},
+            {"csv_vehicle", bac_res.output_vehicle},
+            {"csv_employee", bac_res.output_employee}
+        };
 
         response["results"]["CRDS"] = {
             {"status", crds_res.status},
@@ -344,12 +344,12 @@ int main() {
             {"csv_employee", hd_res.output_employee}
         };
 
-        // response["results"]["VNSK"] = {
-        //     {"status", vnsk_res.status},
-        //     {"logs", vnsk_res.logs},
-        //     {"csv_vehicle", vnsk_res.output_vehicle},
-        //     {"csv_employee", vnsk_res.output_employee}
-        // };
+        response["results"]["VNSK"] = {
+            {"status", vnsk_res.status},
+            {"logs", vnsk_res.logs},
+            {"csv_vehicle", vnsk_res.output_vehicle},
+            {"csv_employee", vnsk_res.output_employee}
+        };
 
         crow::response res(200, response.dump());
         res.add_header("Access-Control-Allow-Origin", "*");

@@ -3,6 +3,7 @@
 #pragma once
 #include "structures.h"
 #include <vector>
+#include "globals.h"
 
 class FeasibilityChecker
 {

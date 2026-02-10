@@ -5,8 +5,7 @@
 
 #include <vector>
 #include <string>
-
-int N, V;
+#include "globals.h"
 
 // matrix storage
 extern std::vector<std::vector<double>> matrix;

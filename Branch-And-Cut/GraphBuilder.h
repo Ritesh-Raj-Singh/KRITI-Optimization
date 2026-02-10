@@ -3,23 +3,25 @@
 #pragma once
 #include "structures.h"
 #include <vector>
+#include "globals.h"
 
-class GraphBuilder {
+class GraphBuilder
+{
 public:
-    int n_u; 
-    int n_v; 
-    int n;   
-    int max_global_capacity; 
+    int n_u;
+    int n_v;
+    int n;
+    int max_global_capacity;
 
     std::vector<Node> nodes;
 
-    GraphBuilder(const std::vector<Request>& requests, const std::vector<Vehicle>& vehicles);
-    
+    GraphBuilder(const std::vector<Request> &requests, const std::vector<Vehicle> &vehicles);
+
     int getPickupNodeId(int reqIndex);
     int getDeliveryNodeId(int reqIndex);
 
 private:
-    void buildNodes(const std::vector<Request>& requests, const std::vector<Vehicle>& vehicles);
+    void buildNodes(const std::vector<Request> &requests, const std::vector<Vehicle> &vehicles);
 };
 
 #endif

@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include "globals.h"
 
 enum VehicleCategory
 {
@@ -39,7 +40,7 @@ struct Request
 
     // UPDATED LOGIC:
     // 1. Premium Req: Must use Premium Vehicle.
-    // 2. Normal Req: Can use Normal OR Premium (Upgrade allowed).
+    // 2. Normal Req: Can use Normal(Upgrade allowed).
     // 3. Any Req: Can use anything.
     bool isVehicleCompatible(VehicleCategory v_cat) const
     {
@@ -47,7 +48,7 @@ struct Request
             return true;
 
         if (veh_pref == CATEGORY_NORMAL)
-            return true;
+            return v_cat == CATEGORY_NORMAL;
         // return v_cat == CATEGORY_NORMAL;
 
         // If I asked for Premium, I strictly want Premium
@@ -99,7 +100,7 @@ struct Node
         if (type == PICKUP)
             return reqs[request_id].original_id; // e.g. "E12"
 
-        if (type == DELIVERY || type == DUMMY_END)
+        if (type == DELIVERY || type == DUMMY_END || type == SUPER_SINK)
             return "OFFICE";
 
         if (type == DUMMY_START)

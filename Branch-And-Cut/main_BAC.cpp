@@ -11,6 +11,7 @@
 #include <fstream>
 #include <unordered_map>
 
+#include "globals.h"
 #include "structures.h"
 #include "utils.h"
 #include "GraphBuilder.h"
@@ -18,9 +19,6 @@
 #include "matrix.h"
 
 std::mt19937_64 RNG(std::chrono::steady_clock::now().time_since_epoch().count());
-
-extern int N;
-extern int V;
 
 // --- Helper Functions for Printing ---
 
@@ -54,14 +52,14 @@ std::string getNodeLabel(const Node &n, const std::vector<Request> &requests, co
     {
         int v_id = (current_veh_id != -1) ? current_veh_id : n.vehicle_id;
         // Safety check to prevent crash if ID is out of bounds
-        if (v_id >= 0 && v_id < vehicles.size())
+        if (v_id >= 0 && v_id < (int)vehicles.size())
             return "Start(" + vehicles[v_id].original_id + ")";
         return "Start(Unknown)";
     }
     if (n.type == Node::DUMMY_END)
     {
         int v_id = (current_veh_id != -1) ? current_veh_id : n.vehicle_id;
-        if (v_id >= 0 && v_id < vehicles.size())
+        if (v_id >= 0 && v_id < (int)vehicles.size())
             return "End(" + vehicles[v_id].original_id + ")";
         return "End(Unknown)";
     }
@@ -139,10 +137,13 @@ void printSolution(const Solver::Solution &sol,
                 int prev_id = route_nodes[i - 1];
                 const Node &prev_node = gb.nodes[prev_id];
 
-                Coords c1 = prev_node.getCoords(requests, vehicles);
-                Coords c2 = curr_node.getCoords(requests, vehicles);
+                // Coords c1 = prev_node.getCoords(requests, vehicles);
+                // Coords c2 = curr_node.getCoords(requests, vehicles);
 
-                double dist_km = getDistance(c1, c2);
+                std::string c1 = prev_node.getMatrixId(requests, vehicles);
+                std::string c2 = curr_node.getMatrixId(requests, vehicles);
+
+                double dist_km = getDistanceFromMatrix(c1, c2);
                 double speed = (v.avg_speed_kmh > 0) ? v.avg_speed_kmh : 30.0;
                 double travel_min = (dist_km / speed) * 60.0;
 
@@ -212,7 +213,25 @@ void printSolution(const Solver::Solution &sol,
                     dist_str = "0.00 km";
                 else
                 {
-                    double d = getDistance(curr_node.getCoords(requests, vehicles), next_node.getCoords(requests, vehicles));
+                    // std::string c2;
+                    // if (next_node.type == Node::DELIVERY || next_node.type == Node::DUMMY_END)
+                    //     c2 = "OFFICE";
+                    // else
+                    //     c2 = next_node.getMatrixId(requests, vehicles);
+                    // std::string c1;
+                    // if (curr_node.type == Node::DELIVERY || curr_node.type == Node::DUMMY_END)
+                    //     c1 = "OFFICE";
+                    // else
+                    //     c1 = curr_node.getMatrixId(requests, vehicles);
+                    // // double d = getDistance(curr_node.getCoords(requests, vehicles), next_node.getCoords(requests, vehicles));
+                    // double d = getDistanceFromMatrix(c1, c2);
+                    // SIMPLIFIED LOGIC:
+                    std::string c1 = curr_node.getMatrixId(requests, vehicles);
+                    std::string c2 = next_node.getMatrixId(requests, vehicles);
+
+                    std::cout << c1 << " " << c2 << std::endl;
+
+                    double d = getDistanceFromMatrix(c1, c2);
                     std::ostringstream oss;
                     oss << std::fixed << std::setprecision(2) << d << " km";
                     dist_str = oss.str();
@@ -314,14 +333,25 @@ std::vector<Vehicle> loadVehicles(const std::string &filename)
     {
         if (line.empty())
             continue;
+        if (!line.empty() && line.back() == '\r')
+        {
+            line.pop_back();
+        }
         std::stringstream ss(line);
         std::string token;
         std::vector<std::string> row;
-
+        std::cout << line << std::endl;
         while (std::getline(ss, token, ','))
         {
             row.push_back(token);
+            // std::cout << token << std::endl;
         }
+
+        // for (int i = 0; i < (int)row.size(); i++)
+        // {
+        //     std::cout << "i:" << i << ' ' << "row[i]:" << row[i] << ",";
+        // }
+        // std::cout << std::endl;
 
         if (row.size() < 8)
             continue;
@@ -332,12 +362,26 @@ std::vector<Vehicle> loadVehicles(const std::string &filename)
 
         // Parse Category
         std::string catStr = row[9];
+        // while (catStr.size() > 7)
+        //     catStr.pop_back();
         if (catStr == "premium" || catStr == "Premium")
+        {
             v.category = CATEGORY_PREMIUM;
+            // std::cout << v.original_id << " assigned premium" << std::endl;
+        }
         else if (catStr == "normal" || catStr == "Normal")
+        {
             v.category = CATEGORY_NORMAL;
+            // std::cout << v.original_id << " assigned normal" << std::endl;
+        }
         else
+        {
             v.category = CATEGORY_ANY;
+            // std::cout << "catStr: " << catStr << std::endl
+            //           << (int)catStr[7] << std::endl;
+            // std::cout << bool(catStr == "premium\n") << std::endl;
+            // std::cout << v.original_id << " assigned any" << std::endl;
+        }
 
         v.max_capacity = std::stoi(row[3]);
         v.start_loc = {std::stod(row[6]), std::stod(row[7])};
@@ -370,6 +414,10 @@ std::vector<Request> loadRequests(const std::string &filename, const std::map<in
     {
         if (line.empty())
             continue;
+        if (!line.empty() && line.back() == '\r')
+        {
+            line.pop_back();
+        }
         std::stringstream ss(line);
         std::string token;
         std::vector<std::string> row;
@@ -394,6 +442,7 @@ std::vector<Request> loadRequests(const std::string &filename, const std::map<in
         std::string t_early = row[6];
         std::string t_late = row[7];
         std::string v_pref = row[8];
+
         std::string s_pref = row[9];
 
         Request r = createRequest(sequential_id++, emp_id, priority, p_lat, p_lng, d_lat, d_lng, t_early, t_late, v_pref, s_pref, priority_delays);
@@ -501,7 +550,7 @@ int main(int argc, char **argv)
 
     // std::cout << "enter no. of iterations : ";
     // std::cin >> solver.max_iterations;
-    solver.max_iterations = 100000;
+    solver.max_iterations = 1000000;
 
     Solver::Solution solution = solver.solveDeterministicAnnealing();
 

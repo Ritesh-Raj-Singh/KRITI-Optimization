@@ -1,8 +1,10 @@
 #include "utils.h"
 #include <cmath>
+#include <iostream>
 #include <string>
 #include <iomanip>
 #include <sstream>
+#include <fstream>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -67,11 +69,20 @@ Request createRequest(
     r.latest_drop = timeStringToMin(t_late);
 
     if (v_pref == "premium")
+    {
         r.veh_pref = CATEGORY_PREMIUM;
+        std::cout << r.original_id << "given preference premimum\n";
+    }
     else if (v_pref == "normal")
+    {
+        std::cout << r.original_id << "given preference normal\n";
         r.veh_pref = CATEGORY_NORMAL;
+    }
     else
+    {
+        std::cout << r.original_id << "given preference any\n";
         r.veh_pref = CATEGORY_ANY;
+    }
 
     // FIXED: Mapping strings to correct integer logic
     // Single = 0 extra people (Total 1)
@@ -101,3 +112,37 @@ Request createRequest(
 
     return r;
 }
+
+// std::vector<InitialTrip> loadInitialSolutionCSV(const std::string &filename)
+// {
+//     std::ifstream file(filename);
+//     if (!file.is_open())
+//     {
+//         std::cerr << "Could not open initial solution file\n";
+//         exit(1);
+//     }
+
+//     std::vector<InitialTrip> trips;
+//     std::string line;
+//     std::getline(file, line); // header
+
+//     while (std::getline(file, line))
+//     {
+//         if (!line.empty() && line.back() == '\r')
+//             line.pop_back();
+
+//         std::stringstream ss(line);
+//         std::string token;
+//         std::vector<std::string> row;
+
+//         while (std::getline(ss, token, ','))
+//             row.push_back(token);
+
+//         if (row.size() < 3)
+//             continue;
+
+//         trips.push_back({row[0], row[2]});
+//     }
+
+//     return trips;
+// }

@@ -8,6 +8,10 @@
 #include <cstdlib>
 #include <chrono>
 #include <map>
+#include <unordered_map>
+#include <functional>
+#include <queue>
+// std::mt19937_64 RNG(std::chrono::steady_clock::now().time_since_epoch().count());
 
 Solver::Solver(const std::vector<Request> &r, const std::vector<Vehicle> &v, GraphBuilder &gb)
     : requests(r), vehicles(v), graph(gb),
@@ -20,7 +24,7 @@ double Solver::calculateRouteCost(const std::vector<int> &route_ids, const Vehic
         return 0.0;
     double total_dist = 0.0;
     double current_time = std::max((double)v.available_from, (double)graph.nodes[route_ids[0]].earliest_time);
-    double start_time = current_time;
+    // double start_time = current_time;
 
     double total_passenger_travel_time = 0.0;
     std::map<int, double> passenger_boarding_times;
@@ -66,7 +70,7 @@ double Solver::calculateRouteCost(const std::vector<int> &route_ids, const Vehic
         current_time = departure + time;
     }
 
-    double duration = current_time - start_time;
+    // double duration = current_time - start_time;
     double monetary_cost = total_dist * v.cost_per_km;
     // Note: ensure weighted_dist_cost and weight_time_cost are defined in Solver.h or locally
     return (dist_cost * monetary_cost) + (time_cost * total_passenger_travel_time);
@@ -93,7 +97,7 @@ void Solver::buildInitialSolution(Solution &sol)
 
     // Sort requests by Earliest Pickup Time (simple heuristic)
     std::vector<int> sorted_reqs(requests.size());
-    for (int i = 0; i < requests.size(); ++i)
+    for (int i = 0; i < (int)requests.size(); ++i)
         sorted_reqs[i] = i;
     // std::sort(sorted_reqs.begin(), sorted_reqs.end(), [&](int a, int b)
     //           { return requests[a].earliest_pickup < requests[b].earliest_pickup; });
@@ -125,7 +129,7 @@ void Solver::buildRegretSolution(Solution &sol)
     std::vector<int> unserved = sol.unserved_requests; // Initially all requests are here (if any)
     // Actually, let's just reset and assume all requests need insertion
     std::vector<int> pending_reqs;
-    for (int i = 0; i < requests.size(); ++i)
+    for (int i = 0; i < (int)requests.size(); ++i)
         pending_reqs.push_back(i);
 
     sol.unserved_requests.clear();
@@ -167,9 +171,9 @@ void Solver::buildRegretSolution(Solution &sol)
                 double current_route_cost = calculateRouteCost(route, vehicles[v_idx]);
 
                 // Check all positions
-                for (int i = 1; i < route.size(); ++i)
+                for (int i = 1; i < (int)route.size(); ++i)
                 {
-                    for (int j = i; j < route.size(); ++j)
+                    for (int j = i; j < (int)route.size(); ++j)
                     {
                         if (checker.checkInsert(route, v_idx, p_node, d_node, i, j))
                         {
@@ -267,9 +271,9 @@ bool Solver::insertRequestBest(Solution &sol, int req_idx, int forbidden_veh_id)
         double current_route_cost = calculateRouteCost(route, vehicles[veh_idx]);
 
         // Check all positions i (pickup) and j (delivery)
-        for (int i = 1; i < route.size(); ++i)
+        for (int i = 1; i < (int)route.size(); ++i)
         {
-            for (int j = i; j < route.size(); ++j)
+            for (int j = i; j < (int)route.size(); ++j)
             {
                 if (checker.checkInsert(route, veh_idx, p_node, d_node, i, j))
                 {
@@ -314,15 +318,36 @@ bool Solver::insertRequestBest(Solution &sol, int req_idx)
 // --- DETERMINISTIC ANNEALING MAIN LOOP ---
 Solver::Solution Solver::solveDeterministicAnnealing()
 {
+    auto begin = std::chrono::high_resolution_clock::now();
+
     Solution current_sol;
     buildInitialSolution(current_sol);
+    // buildGraphMatchingInitialSolution(current_sol);
     // buildRegretSolution(current_sol);
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
+    std::cerr << "Initial Solution: " << elapsed.count() * 1e-9 << " seconds.\n";
 
     Solution best_sol = current_sol;
 
     double avg_cost = calculateAverageEdgeCost();
     double t_max = avg_cost * param_t_max_mult;
     double T = t_max;
+
+    double initial_t = avg_cost * 0.5;
+    // double TT = initial_t;
+    double TT = 100.0;
+    double FT = 0.05;
+
+    int iter_per_temp = 10;
+    double total_cooling_steps = (double)max_iterations / iter_per_temp;
+
+    // double alpha = std::pow(FT / initial_t, 1.0 / total_cooling_steps);
+    double alpha = 1;
+    int reheat_interval = 2000;
+
+    int no_improve_global = 0;
 
     std::cout << "Starting DA. Init Cost: " << current_sol.total_cost << " | T_max: " << t_max << "\n";
 
@@ -370,6 +395,7 @@ Solver::Solution Solver::solveDeterministicAnnealing()
             {
                 best_sol = current_sol;
                 no_improve_iter = 0;
+                no_improve_global = 0;
             }
             else if (current_sol.unserved_requests.size() == best_sol.unserved_requests.size())
             {
@@ -377,29 +403,46 @@ Solver::Solution Solver::solveDeterministicAnnealing()
                 {
                     best_sol = current_sol;
                     no_improve_iter = 0;
+                    no_improve_global = 0;
                 }
             }
         }
 
-        if (no_improve_iter > 0)
-        {
-            T = T - (t_max / param_t_red);
+        // if (no_improve_iter > 0)
+        // {
+        //     T = T - (t_max / param_t_red);
 
-            if (T < 0)
-            {
-                if (no_improve_iter > param_n_imp)
-                {
-                    current_sol = best_sol;
-                    no_improve_iter = 0;
-                    double r = ((double)rand() / (RAND_MAX));
-                    T = r * t_max;
-                }
-                else
-                {
-                    double r = ((double)rand() / (RAND_MAX));
-                    T = r * t_max;
-                }
-            }
+        //     if (T < 0)
+        //     {
+        //         if (no_improve_iter > param_n_imp)
+        //         {
+        //             current_sol = best_sol;
+        //             no_improve_iter = 0;
+        //             double r = ((double)rand() / (RAND_MAX));
+        //             T = r * t_max;
+        //         }
+        //         else
+        //         {
+        //             double r = ((double)rand() / (RAND_MAX));
+        //             T = r * t_max;
+        //         }
+        //     }
+        // }
+
+        if (!accepted)
+            no_improve_global++;
+        if (iter % iter_per_temp == 0)
+        {
+            TT *= alpha;
+            if (TT < FT)
+                TT = FT;
+        }
+        if (no_improve_global > reheat_interval)
+        {
+            current_sol = best_sol;
+            // TT = initial_t * 0.15;
+            TT = initial_t;
+            no_improve_global = 0;
         }
     }
 
@@ -455,9 +498,9 @@ bool Solver::operatorRelocate(Solution &sol, double threshold)
 
         double cost_old_tgt = calculateRouteCost(tgt_route, v);
 
-        for (int i = 1; i < tgt_route.size(); ++i)
+        for (int i = 1; i < (int)tgt_route.size(); ++i)
         {
-            for (int j = i; j < tgt_route.size(); ++j)
+            for (int j = i; j < (int)tgt_route.size(); ++j)
             {
                 if (checker.checkInsert(tgt_route, tgt_veh_id - 1, p_id, d_id, i, j))
                 {
@@ -546,9 +589,9 @@ bool Solver::operatorExchange(Solution &sol, double threshold)
     // Find best insertion for r2 into v1
     double best_v1_new_cost = std::numeric_limits<double>::max();
     std::vector<int> best_v1_route;
-    for (int i = 1; i < temp_v1.size(); ++i)
+    for (int i = 1; i < (int)temp_v1.size(); ++i)
     {
-        for (int j = i; j < temp_v1.size(); ++j)
+        for (int j = i; j < (int)temp_v1.size(); ++j)
         {
             if (checker.checkInsert(temp_v1, v1 - 1, p2, d2, i, j))
             {
@@ -570,9 +613,9 @@ bool Solver::operatorExchange(Solution &sol, double threshold)
     // Find best insertion for r1 into v2
     double best_v2_new_cost = std::numeric_limits<double>::max();
     std::vector<int> best_v2_route;
-    for (int i = 1; i < temp_v2.size(); ++i)
+    for (int i = 1; i < (int)temp_v2.size(); ++i)
     {
-        for (int j = i; j < temp_v2.size(); ++j)
+        for (int j = i; j < (int)temp_v2.size(); ++j)
         {
             if (checker.checkInsert(temp_v2, v2 - 1, p1, d1, i, j))
             {
@@ -701,13 +744,32 @@ bool Solver::operator2Opt(Solution &sol, double threshold)
     std::vector<int> new_r1, new_r2;
     for (int k = 0; k <= idx1; ++k)
         new_r1.push_back(r1[k]);
-    for (int k = idx2 + 1; k < r2.size(); ++k)
+    for (int k = idx2 + 1; k < (int)r2.size(); ++k)
         new_r1.push_back(r2[k]);
 
     for (int k = 0; k <= idx2; ++k)
         new_r2.push_back(r2[k]);
-    for (int k = idx1 + 1; k < r1.size(); ++k)
+    for (int k = idx1 + 1; k < (int)r1.size(); ++k)
         new_r2.push_back(r1[k]);
+
+    auto compatibleRoute = [&](const std::vector<int> &r, int veh_idx)
+    {
+        for (int node : r)
+        {
+            if (graph.nodes[node].type == Node::PICKUP)
+            {
+                int req = graph.nodes[node].request_id;
+                if (!requests[req].isVehicleCompatible(vehicles[veh_idx].category))
+                    return false;
+            }
+        }
+        return true;
+    };
+
+    if (!compatibleRoute(new_r1, v1_id - 1))
+        return false;
+    if (!compatibleRoute(new_r2, v2_id - 1))
+        return false;
 
     if (!checker.runEightStepEvaluation(new_r1, v1_id - 1))
         return false;
@@ -761,7 +823,7 @@ double Solver::calculateAverageEdgeCost()
     for (int i = 0; i < 100; ++i)
     {
         int r1 = rand() % requests.size();
-        int r2 = rand() % requests.size();
+        // int r2 = rand() % requests.size();
 
         // sum += getDistance(requests[r1].pickup_loc, requests[r2].drop_loc);
         std::string from_id = requests[r1].original_id;
@@ -770,4 +832,319 @@ double Solver::calculateAverageEdgeCost()
         count++;
     }
     return (count > 0) ? sum / count : 10.0;
+}
+
+// void Solver::buildInitialSolutionFromCSV(
+//     Solution &sol,
+//     const std::vector<InitialTrip> &trips)
+// {
+//     sol.routes.clear();
+//     sol.unserved_requests.clear();
+
+//     // 1. Initialize empty routes
+//     for (const auto &veh : vehicles)
+//     {
+//         sol.routes[veh.id] = {
+//             1 + (veh.id - 1),
+//             graph.n + 1 + (veh.id - 1)};
+//     }
+
+//     // 2. Build lookup maps
+//     std::unordered_map<std::string, int> vehMap;
+//     for (const auto &v : vehicles)
+//         vehMap[v.original_id] = v.id;
+
+//     std::unordered_map<std::string, int> reqMap;
+//     for (int i = 0; i < (int)requests.size(); i++)
+//         reqMap[requests[i].original_id] = i;
+
+//     // 3. Insert trips in given order
+//     for (const auto &t : trips)
+//     {
+//         if (!vehMap.count(t.vehicle_id) || !reqMap.count(t.employee_id))
+//             continue;
+
+//         int veh_id = vehMap[t.vehicle_id];
+//         int req_id = reqMap[t.employee_id];
+
+//         int p = graph.getPickupNodeId(req_id);
+//         int d = graph.getDeliveryNodeId(req_id);
+
+//         auto &route = sol.routes[veh_id];
+
+//         // Insert before END
+//         route.insert(route.end() - 1, p);
+//         route.insert(route.end() - 1, d);
+//     }
+
+//     // 4. Mark unserved requests
+//     std::vector<bool> served(requests.size(), false);
+//     for (auto &[vid, route] : sol.routes)
+//         for (int n : route)
+//             if (graph.nodes[n].type == Node::PICKUP)
+//                 served[graph.nodes[n].request_id] = true;
+
+//     for (int i = 0; i < (int)requests.size(); i++)
+//         if (!served[i])
+//             sol.unserved_requests.push_back(i);
+
+//     // 5. Validate feasibility
+//     for (auto &[vid, route] : sol.routes)
+//     {
+//         if (!checker.runEightStepEvaluation(route, vid - 1))
+//         {
+//             std::cerr << "Initial solution infeasible for vehicle " << vid << "\n";
+//         }
+//     }
+
+//     // 6. Cost
+//     sol.total_cost = calculateTotalCost(sol);
+// }
+
+// --- GRAPH MATCHING + CAPACITY AWARE INITIAL SOLUTION ---
+// --- GRAPH MATCHING + CAPACITY + SHARING AWARE INITIAL SOLUTION ---
+void Solver::buildGraphMatchingInitialSolution(Solution &sol)
+{
+    sol.routes.clear();
+    sol.unserved_requests.clear();
+
+    int N = requests.size();
+    int V = vehicles.size();
+
+    // 1️⃣ Initialize empty routes
+    for (const auto &veh : vehicles)
+    {
+        sol.routes[veh.id] = {
+            1 + (veh.id - 1),
+            graph.n + 1 + (veh.id - 1)};
+    }
+
+    if (N == 0)
+    {
+        sol.total_cost = 0;
+        return;
+    }
+
+    // 2️⃣ Build compatibility graph between requests
+    std::vector<std::vector<int>> adj(N);
+
+    for (int i = 0; i < N; ++i)
+    {
+        int p_i = graph.getPickupNodeId(i);
+        int d_i = graph.getDeliveryNodeId(i);
+
+        const Node &pickup_i = graph.nodes[p_i];
+        const Node &delivery_i = graph.nodes[d_i];
+
+        for (int j = 0; j < N; ++j)
+        {
+            if (i == j)
+                continue;
+
+            int p_j = graph.getPickupNodeId(j);
+            const Node &pickup_j = graph.nodes[p_j];
+
+            // travel time from delivery_i (OFFICE) to pickup_j
+            std::string from = delivery_i.getMatrixId(requests, vehicles);
+            std::string to = pickup_j.getMatrixId(requests, vehicles);
+
+            double dist = getDistanceFromMatrix(from, to);
+            double speed = vehicles[0].avg_speed_kmh > 0 ? vehicles[0].avg_speed_kmh : 30.0;
+
+            double travel_time = (dist / speed) * 60.0;
+
+            double finish_i = std::max(
+                                  (double)delivery_i.earliest_time,
+                                  (double)pickup_i.earliest_time) +
+                              delivery_i.service_duration + travel_time;
+
+            if (finish_i <= pickup_j.latest_time)
+            {
+                adj[i].push_back(j);
+            }
+        }
+    }
+
+    // 3️⃣ Hopcroft–Karp Maximum Matching
+    std::vector<int> matchL(N, -1), matchR(N, -1), dist(N);
+
+    std::function<bool()> bfs = [&]()
+    {
+        std::queue<int> q;
+
+        for (int i = 0; i < N; i++)
+        {
+            if (matchL[i] < 0)
+            {
+                dist[i] = 0;
+                q.push(i);
+            }
+            else
+            {
+                dist[i] = -1;
+            }
+        }
+
+        bool found = false;
+
+        while (!q.empty())
+        {
+            int u = q.front();
+            q.pop();
+
+            for (int v : adj[u])
+            {
+                int nxt = matchR[v];
+
+                if (nxt >= 0 && dist[nxt] < 0)
+                {
+                    dist[nxt] = dist[u] + 1;
+                    q.push(nxt);
+                }
+
+                if (nxt < 0)
+                    found = true;
+            }
+        }
+        return found;
+    };
+
+    std::function<bool(int)> dfs = [&](int u)
+    {
+        for (int v : adj[u])
+        {
+            int nxt = matchR[v];
+
+            if (nxt < 0 || (dist[nxt] == dist[u] + 1 && dfs(nxt)))
+            {
+                matchL[u] = v;
+                matchR[v] = u;
+                return true;
+            }
+        }
+
+        dist[u] = -1;
+        return false;
+    };
+
+    while (bfs())
+    {
+        for (int i = 0; i < N; i++)
+            if (matchL[i] < 0)
+                dfs(i);
+    }
+
+    // 4️⃣ Extract chains (minimum path cover)
+    std::vector<bool> hasPrev(N, false);
+
+    for (int i = 0; i < N; ++i)
+        if (matchL[i] != -1)
+            hasPrev[matchL[i]] = true;
+
+    std::vector<std::vector<int>> chains;
+
+    for (int i = 0; i < N; ++i)
+    {
+        if (!hasPrev[i])
+        {
+            std::vector<int> chain;
+            int curr = i;
+
+            chain.push_back(curr);
+
+            while (matchL[curr] != -1)
+            {
+                curr = matchL[curr];
+                chain.push_back(curr);
+            }
+
+            chains.push_back(chain);
+        }
+    }
+
+    // 5️⃣ Assign chains to vehicles
+    int chain_count = std::min((int)chains.size(), V);
+
+    for (int c = 0; c < chain_count; ++c)
+    {
+        int veh_id = vehicles[c].id;
+        int veh_idx = veh_id - 1;
+
+        auto &route = sol.routes[veh_id];
+
+        int current_load = 0;
+        int capacity = vehicles[veh_idx].max_capacity;
+
+        std::vector<int> active_passengers;
+
+        for (int req_idx : chains[c])
+        {
+            int p = graph.getPickupNodeId(req_idx);
+            int d = graph.getDeliveryNodeId(req_idx);
+
+            // If vehicle full → deliver all
+            if (current_load == capacity)
+            {
+                for (int r : active_passengers)
+                {
+                    int dnode = graph.getDeliveryNodeId(r);
+                    route.insert(route.end() - 1, dnode);
+                }
+
+                active_passengers.clear();
+                current_load = 0;
+            }
+
+            // Pickup
+            route.insert(route.end() - 1, p);
+            active_passengers.push_back(req_idx);
+            current_load++;
+
+            // Enforce sharing constraint
+            int min_allowed_load = INT_MAX;
+
+            for (int r : active_passengers)
+            {
+                min_allowed_load = std::min(
+                    min_allowed_load,
+                    requests[r].max_shared_with + 1);
+            }
+
+            if (current_load > min_allowed_load)
+            {
+                int r = active_passengers.front();
+                int dnode = graph.getDeliveryNodeId(r);
+
+                route.insert(route.end() - 1, dnode);
+
+                active_passengers.erase(active_passengers.begin());
+                current_load--;
+            }
+        }
+
+        // Deliver remaining passengers
+        for (int r : active_passengers)
+        {
+            int dnode = graph.getDeliveryNodeId(r);
+            route.insert(route.end() - 1, dnode);
+        }
+
+        // Final feasibility check
+        if (!checker.runEightStepEvaluation(route, veh_idx))
+        {
+            for (int r : chains[c])
+                sol.unserved_requests.push_back(r);
+
+            route = {
+                1 + (veh_id - 1),
+                graph.n + 1 + (veh_id - 1)};
+        }
+    }
+
+    // Mark overflow chains as unserved
+    for (int i = V; i < (int)chains.size(); ++i)
+        for (int r : chains[i])
+            sol.unserved_requests.push_back(r);
+
+    sol.total_cost = calculateTotalCost(sol);
 }

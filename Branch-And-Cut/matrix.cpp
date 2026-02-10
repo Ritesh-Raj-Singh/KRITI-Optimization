@@ -20,6 +20,16 @@ void loadMatrix(const std::string &filename, int size)
     for (int i = 0; i < size; i++)
         for (int j = 0; j < size; j++)
             fin >> matrix[i][j];
+
+    std::cout << "Generated Matrix: \n";
+    for (int i = 0; i < size; i++)
+    {
+        for (int j = 0; j < size; j++)
+        {
+            std::cout << matrix[i][j] << " ";
+        }
+        std::cout << std::endl;
+    }
 }
 
 int convert(const std::string &a)

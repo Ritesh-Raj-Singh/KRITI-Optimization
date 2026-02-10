@@ -1,8 +1,10 @@
 #include <vector>
 #include <map>
+#include "utils.h"
 #include "structures.h"
 #include "GraphBuilder.h"
 #include "FeasibilityChecker.h"
+#include "globals.h"
 
 class Solver
 {
@@ -31,6 +33,9 @@ public:
     void buildRegretSolution(Solution &sol);
     bool insertRequestBest(Solution &sol, int req_idx);
     bool insertRequestBest(Solution &sol, int req_idx, int forbidden_veh_id);
+
+    // void buildInitialSolutionFromCSV(Solution &sol, const std::vector<InitialTrip> &trips);
+    void buildGraphMatchingInitialSolution(Solution &sol);
 
     // Main entry point
     Solution solveDeterministicAnnealing();
