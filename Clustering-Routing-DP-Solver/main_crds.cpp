@@ -666,8 +666,8 @@ int main(int argc, char** argv) {
     double grand_total_running_cost = 0; 
     double grand_total_weighted_score = 0;
 
-    fs::path outvehic_path = base_dir / "output_vehicle.csv";
-    fs::path outemp_path = base_dir / "output_employees.csv";
+    fs::path outvehic_path = base_dir / "Clustering-Routing-DP-Solver/output_vehicle.csv";
+    fs::path outemp_path = base_dir / "Clustering-Routing-DP-Solver/output_employees.csv";
     
     ofstream outFileVeh(outvehic_path);
     ofstream outFileEmp(outemp_path);
@@ -710,7 +710,7 @@ int main(int argc, char** argv) {
 
                 if(final_score < b_weighted_penalized) {
                     b_weighted_penalized = final_score; 
-                    b_res = res; 
+                    b_res = res;
                     b_veh = v;
                 }
             }

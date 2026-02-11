@@ -640,7 +640,7 @@ int main(int argc, char **argv)
     // --- CSV Generation ---
 
     // 1. Vehicle-wise Output CSV
-    fs::path veh_out_path = base_dir / "Branch-And-Cut/output_vehicle.csv";
+    fs::path veh_out_path = base_dir / "Variable_Neighbourhood_Search/output_vehicle.csv";
     ofstream outFileVeh(veh_out_path);
     outFileVeh << "vehicle_id,category,employee_id,pickup_time,drop_time" << endl;
 
@@ -700,8 +700,8 @@ int main(int argc, char **argv)
     }
     outFileVeh.close();
 
-    // 2. Employee-wise Output CSV
-    fs::path emp_out_path = base_dir / "Branch-And-Cut/output_employees.csv";
+    // 2. Employee-wise Output CSVClustering-Routing-DP-Solver/Prototype_Cost_Minimization.cpp
+    fs::path emp_out_path = base_dir / "Variable_Neighbourhood_Search/output_employees.csv";
     ofstream outFileEmp(emp_out_path);
     outFileEmp << "employee_id,pickup_time,drop_time" << endl;
     for (const auto &entry : empRecords)
