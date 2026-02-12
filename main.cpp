@@ -87,99 +87,166 @@ struct TempDirGuard
 };
 
 /* ===================== STEP 1: MATRIX GENERATION ===================== */
-json generate_matrix_file(const std::string &empData, const std::string &vehData, Matrix &outMatrix, const fs::path &reqDir)
+json generate_matrix_file(const std::string &empData,
+                          const std::string &vehData,
+                          Matrix &outMatrix,
+                          const fs::path &reqDir)
 {
     json result;
     std::vector<std::pair<double, double>> coords;
 
     try
     {
-        // ... (Parsing logic remains the same) ...
-        // 1. Parse Employees
+        // ===================== PARSE INPUT =====================
+
         std::pair<double, double> hold = {0.0, 0.0};
         std::stringstream empSS(empData);
         std::string line;
         std::getline(empSS, line);
+
         while (std::getline(empSS, line))
         {
             if (!line.empty() && line.back() == '\r')
                 line.pop_back();
+
             auto c = splitLine(line);
             if (c.size() < 4)
                 continue;
+
             coords.push_back({std::stod(c[2]), std::stod(c[3])});
+
             if (c.size() >= 6)
                 hold = {std::stod(c[4]), std::stod(c[5])};
         }
 
-        // 2. Parse Vehicles
         std::stringstream vehSS(vehData);
         std::getline(vehSS, line);
+
         while (std::getline(vehSS, line))
         {
             if (!line.empty() && line.back() == '\r')
                 line.pop_back();
+
             auto c = splitLine(line);
             if (c.size() < 8)
                 continue;
+
             coords.push_back({std::stod(c[6]), std::stod(c[7])});
         }
 
-        // 3. Add Depot
-        coords.push_back(hold);
+        coords.push_back(hold); // Add depot
 
         if (coords.empty())
+            throw std::runtime_error("No coordinates found");
+
+        int N = coords.size();
+        const int LIMIT = 99;
+
+        outMatrix.assign(N, std::vector<double>(N, 0.0));
+
+        // ===================== CREATE BLOCKS =====================
+
+        std::vector<std::vector<int>> blocks;
+        for (int i = 0; i < N; i += LIMIT)
         {
-            result["status"] = "error";
-            result["message"] = "No coordinates found";
-            return result;
+            std::vector<int> block;
+            for (int j = i; j < std::min(i + LIMIT, N); ++j)
+                block.push_back(j);
+            blocks.push_back(block);
         }
 
-        std::ostringstream url_coords;
-        for (size_t i = 0; i < coords.size(); i++)
+        // ===================== THREAD FUNCTION =====================
+
+        auto fetch_block = [&](const std::vector<int> &srcBlock,
+                               const std::vector<int> &dstBlock)
         {
-            url_coords << coords[i].second << "," << coords[i].first;
-            if (i + 1 < coords.size())
-                url_coords << ";";
+            std::ostringstream coordStr;
+            for (int i = 0; i < N; ++i)
+            {
+                coordStr << coords[i].second << "," << coords[i].first;
+                if (i + 1 < N)
+                    coordStr << ";";
+            }
+
+            std::ostringstream srcStr, dstStr;
+
+            for (size_t i = 0; i < srcBlock.size(); ++i)
+            {
+                srcStr << srcBlock[i];
+                if (i + 1 < srcBlock.size())
+                    srcStr << ";";
+            }
+
+            for (size_t i = 0; i < dstBlock.size(); ++i)
+            {
+                dstStr << dstBlock[i];
+                if (i + 1 < dstBlock.size())
+                    dstStr << ";";
+            }
+
+            std::string url =
+                "http://router.project-osrm.org/table/v1/driving/" +
+                coordStr.str() +
+                "?sources=" + srcStr.str() +
+                "&destinations=" + dstStr.str() +
+                "&annotations=distance";
+
+            fs::path tmpJson = reqDir / ("osrm_block_" +
+                                         std::to_string(srcBlock.front()) + "_" +
+                                         std::to_string(dstBlock.front()) + ".json");
+
+            std::string cmd = "curl -sS \"" + url + "\" -o \"" + tmpJson.string() + "\"";
+            if (std::system(cmd.c_str()) != 0)
+                return;
+
+            std::ifstream jf(tmpJson);
+            json j;
+            jf >> j;
+
+            if (!j.contains("distances"))
+                return;
+
+            auto distances = j["distances"];
+
+            for (size_t i = 0; i < srcBlock.size(); ++i)
+            {
+                for (size_t k = 0; k < dstBlock.size(); ++k)
+                {
+                    outMatrix[srcBlock[i]][dstBlock[k]] =
+                        distances[i][k].get<double>() / 1000.0;
+                }
+            }
+        };
+
+        // ===================== LAUNCH THREADS =====================
+
+        std::vector<std::thread> threads;
+
+        for (const auto &srcBlock : blocks)
+        {
+            for (const auto &dstBlock : blocks)
+            {
+                threads.emplace_back(fetch_block, srcBlock, dstBlock);
+            }
         }
 
-        std::string url = "http://router.project-osrm.org/table/v1/driving/" + url_coords.str() + "?annotations=distance";
+        for (auto &t : threads)
+            t.join();
 
-        fs::path jsonPath = reqDir / "osrm_raw.json";
-
-        // Use -sS to hide progress bar but show errors
-        std::string cmd = "curl -sS \"" + url + "\" -o \"" + jsonPath.string() + "\"";
-        int ret = std::system(cmd.c_str());
-
-        if (ret != 0)
-            throw std::runtime_error("Curl command failed");
-
-        std::ifstream jsonFile(jsonPath);
-        json j;
-        jsonFile >> j;
-
-        if (!j.contains("distances"))
-            throw std::runtime_error("No distances in OSRM response");
+        // ===================== WRITE FINAL MATRIX =====================
 
         std::ofstream txtOut(reqDir / "matrix.txt");
-        auto matrixJson = j["distances"];
+        txtOut << N << " " << N << "\n";
 
-        outMatrix.clear();
-        for (const auto &row : matrixJson)
+        for (int i = 0; i < N; ++i)
         {
-            std::vector<double> rowVec;
-            for (const auto &val : row)
-            {
-                double km = val.get<double>() / 1000.0;
-                txtOut << km << " ";
-                rowVec.push_back(km);
-            }
+            for (int j = 0; j < N; ++j)
+                txtOut << outMatrix[i][j] << " ";
             txtOut << "\n";
-            outMatrix.push_back(rowVec);
         }
-        txtOut.close();
 
         result["status"] = "success";
+        result["size"] = N;
     }
     catch (std::exception &e)
     {
@@ -187,6 +254,7 @@ json generate_matrix_file(const std::string &empData, const std::string &vehData
         result["message"] = e.what();
         std::cerr << "Matrix Error: " << e.what() << std::endl;
     }
+
     return result;
 }
 
