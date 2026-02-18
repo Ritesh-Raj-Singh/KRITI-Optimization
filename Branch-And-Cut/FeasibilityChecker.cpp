@@ -8,7 +8,8 @@ FeasibilityChecker::FeasibilityChecker(
     const std::vector<Node> &n,
     const std::vector<Request> &r,
     const std::vector<Vehicle> &U,
-    int global_cap) : nodes(n), requests(r), vehicles(U), max_global_capacity(global_cap) {}
+    int global_cap,
+    EvaluationMode m) : nodes(n), requests(r), vehicles(U), max_global_capacity(global_cap), mode(m), total_penalty(0) {}
 
 bool FeasibilityChecker::checkInsert(
     const std::vector<int> &current_route_ids,
@@ -26,6 +27,8 @@ bool FeasibilityChecker::checkInsert(
 
 bool FeasibilityChecker::runEightStepEvaluation(const std::vector<int> &route_ids, int veh_idx)
 {
+    total_penalty = 0;
+
     int U = route_ids.size();
     const Vehicle &vehicle = vehicles[veh_idx];
 
@@ -64,7 +67,21 @@ bool FeasibilityChecker::runEightStepEvaluation(const std::vector<int> &route_id
         int B_i = A[i] + W[i];
 
         if (B_i > n_curr.latest_time)
-            return false;
+        {
+            if (mode == EvaluationMode::STRICT)
+            {
+                return false;
+            }
+            else if (mode == EvaluationMode::PENALTY && n_curr.type == Node::DELIVERY)
+            {
+                long long violation = B_i - n_curr.latest_time;
+                total_penalty += 10000 * violation;
+            }
+            else
+            {
+                return false;
+            }
+        }
 
         D[i] = B_i + n_curr.service_duration;
         L[i] = L[i - 1] + n_curr.demand;

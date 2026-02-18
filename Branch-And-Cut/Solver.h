@@ -18,6 +18,7 @@ public:
     };
 
     Solver(const std::vector<Request> &r, const std::vector<Vehicle> &v, GraphBuilder &gb);
+    long long getRoutePenalty(const std::vector<int> &route, int veh_idx);
 
     // Weights for the objective function
     double dist_cost = 1.0;

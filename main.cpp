@@ -236,7 +236,7 @@ json generate_matrix_file(const std::string &empData,
         // ===================== WRITE FINAL MATRIX =====================
 
         std::ofstream txtOut(reqDir / "matrix.txt");
-        txtOut << N << " " << N << "\n";
+        // txtOut << N << " " << N << "\n";
 
         for (int i = 0; i < N; ++i)
         {
@@ -430,7 +430,7 @@ int main()
         res.add_header("Access-Control-Allow-Origin", "*");
         res.add_header("Content-Type", "application/json");
         return res; });
-        
+
     std::cout << "Server running on port 5555..." << std::endl;
     app.port(5555).multithreaded().run();
 }

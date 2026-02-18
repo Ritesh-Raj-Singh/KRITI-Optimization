@@ -5,6 +5,12 @@
 #include <vector>
 #include "globals.h"
 
+enum class EvaluationMode
+{
+    STRICT,
+    PENALTY
+};
+
 class FeasibilityChecker
 {
 private:
@@ -18,7 +24,8 @@ public:
         const std::vector<Node> &n,
         const std::vector<Request> &r,
         const std::vector<Vehicle> &v,
-        int global_cap);
+        int global_cap,
+        EvaluationMode m = EvaluationMode::STRICT);
 
     bool checkInsert(
         const std::vector<int> &current_route_ids,
@@ -30,6 +37,11 @@ public:
 
     // MOVED TO PUBLIC for optimization access
     bool runEightStepEvaluation(const std::vector<int> &route_ids, int veh_idx);
+
+    long long getPenalty() const { return total_penalty; }
+
+    EvaluationMode mode;
+    long long total_penalty;
 };
 
 #endif
