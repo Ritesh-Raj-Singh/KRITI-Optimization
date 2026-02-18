@@ -6,11 +6,14 @@
 #include <vector>
 #include <string>
 #include <cstdlib>
+#include <cmath>
 #include <thread>
 #include <mutex>
 #include <iomanip>
 #include <random>
 #include <filesystem>
+
+#define M_PI 3.14159265358979323846
 
 using json = nlohmann::json;
 using Matrix = std::vector<std::vector<double>>;
@@ -203,17 +206,30 @@ json generate_matrix_file(const std::string &empData,
             json j;
             jf >> j;
 
-            if (!j.contains("distances"))
-                return;
+            if (!j.contains("distances")){
+                // return;
 
-            auto distances = j["distances"];
+                auto distances = j["distances"];
 
-            for (size_t i = 0; i < srcBlock.size(); ++i)
-            {
-                for (size_t k = 0; k < dstBlock.size(); ++k)
+                for (size_t i = 0; i < srcBlock.size(); ++i)
                 {
-                    outMatrix[srcBlock[i]][dstBlock[k]] =
-                        distances[i][k].get<double>() / 1000.0;
+                    for (size_t k = 0; k < dstBlock.size(); ++k)
+                    {
+                        outMatrix[srcBlock[i]][dstBlock[k]] =
+                            distances[i][k].get<double>() / 1000.0;
+                    }
+                }
+            }
+            else{
+                for (size_t i = 0; i < srcBlock.size(); ++i)
+                {
+                    for (size_t k = 0; k < dstBlock.size(); ++k)
+                    {
+                        outMatrix[srcBlock[i]][dstBlock[k]] =
+                            // distances[i][k].get<double>() / 1000.0;
+                            haversine(coords[srcBlock[i]].first, coords[srcBlock[i]].second, 
+                            coords[dstBlock[k]].first, coords[dstBlock[k]].second);
+                    }
                 }
             }
         };
@@ -236,7 +252,7 @@ json generate_matrix_file(const std::string &empData,
         // ===================== WRITE FINAL MATRIX =====================
 
         std::ofstream txtOut(reqDir / "matrix.txt");
-        txtOut << N << " " << N << "\n";
+        // txtOut << N << " " << N << "\n";
 
         for (int i = 0; i < N; ++i)
         {
@@ -317,6 +333,34 @@ SolverResult run_solver(std::string folderName, std::string execName, fs::path r
     return res;
 }
 /* ===================== MAIN SERVER ===================== */
+
+double toRadians(double degree) {
+    return degree * (M_PI / 180.0);
+}
+
+double haversine(double lat1, double lon1, double lat2, double lon2) {
+    // Earth's radius in kilometers
+    const double R = 6371.0; 
+    
+    // If you need Miles, use R = 3958.8;
+
+    // Convert differences to radians
+    double dLat = toRadians(lat2 - lat1);
+    double dLon = toRadians(lon2 - lon1);
+
+    // Convert current latitudes to radians
+    lat1 = toRadians(lat1);
+    lat2 = toRadians(lat2);
+
+    // Apply formula
+    double a = std::pow(std::sin(dLat / 2), 2) + 
+               std::pow(std::sin(dLon / 2), 2) * std::cos(lat1) * std::cos(lat2);
+               
+    double c = 2 * std::atan2(std::sqrt(a), std::sqrt(1 - a));
+
+    return R * c;
+}
+
 int main()
 {
     crow::SimpleApp app;
@@ -367,6 +411,7 @@ int main()
         json matrix_status = generate_matrix_file(empData, vehData, internal_matrix, reqDir);
     
         if (matrix_status["status"] == "error") {
+
             return crow::response(500, "Matrix Failed: " + matrix_status["message"].get<std::string>());
         }
 
