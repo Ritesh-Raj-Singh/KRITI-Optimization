@@ -91,7 +91,6 @@ int main(int argc, char *argv[])
     std::cout << "Total distance:   " << total_distance << "\n";
     std::cout << "Total duration:   " << total_duration << "\n";
     std::cout << "Objective cost:   " << objective_cost << "\n";
-
     write_output_csvs(best, instance, base);
 
     auto end = std::chrono::high_resolution_clock::now();

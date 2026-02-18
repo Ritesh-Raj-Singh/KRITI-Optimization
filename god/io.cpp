@@ -512,7 +512,7 @@ void write_output_csvs(const Solution &solution, DARPInstance &instance, std::st
     // Write output_vehicles.csv
     // Format: vehicle_id,category,employee_id,pickup_time,drop_time
     {
-        std::ofstream fout(base + "god/output_vehicles.csv", std::ios::trunc);
+        std::ofstream fout(base + "/god/output_vehicles.csv", std::ios::trunc);
         fout << "vehicle_id,category,employee_id,pickup_time,drop_time\n";
         for (const CSVRow &r : rows)
             fout << format_id('V', r.vehicle_id) << "," << r.category << "," << format_id('E', r.employee_id)
@@ -523,7 +523,7 @@ void write_output_csvs(const Solution &solution, DARPInstance &instance, std::st
     // Write output_employees.csv
     // Format: employee_id,pickup_time,drop_time
     {
-        std::ofstream fout(base + "god/output_employees.csv", std::ios::trunc);
+        std::ofstream fout(base + "/god/output_employees.csv", std::ios::trunc);
         fout << "employee_id,pickup_time,drop_time\n";
         for (const CSVRow &r : rows)
             fout << format_id('E', r.employee_id) << "," << r.pickup_time << "," << r.drop_time << "\n";
