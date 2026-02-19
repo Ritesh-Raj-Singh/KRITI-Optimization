@@ -4,7 +4,6 @@
 #include <string>
 #include <cmath>
 #include <algorithm>
-#include <map>
 #include <limits>
 #include <random>
 #include <iomanip>
@@ -22,48 +21,58 @@ namespace fs = std::filesystem;
 #define M_PI 3.14159265358979323846
 #endif
 
-using namespace std;
-
 // Defined in matrix.cpp
 extern int N;
 extern int V;
 
 // ==========================================
-// 1. DATA STRUCTURES
+// 1. DATA STRUCTURES & FAST MATRIX
 // ==========================================
 
-const double INF = numeric_limits<double>::max();
+const double INF = std::numeric_limits<double>::max();
+
+// O(1) Lookup Table for Distances
+std::vector<std::vector<double>> fast_distance;
+int office_matrix_id = -1;
 
 // Helper to convert minutes to HH:MM
-string minToTime(int m)
+std::string minToTime(int m)
 {
     int hrs = (m / 60) % 24;
     int mins = m % 60;
-    stringstream ss;
-    ss << setfill('0') << setw(2) << hrs << ":" << setw(2) << mins;
+    std::stringstream ss;
+    ss << std::setfill('0') << std::setw(2) << hrs << ":" << std::setw(2) << mins;
     return ss.str();
 }
 
 // Helper to convert HH:MM string to minutes
-int timeStringToMin(string t_str)
+int timeStringToMin(const std::string& t_str)
 {
     if (t_str.empty())
         return 0;
     int hrs = 0, mins = 0;
     char colon;
-    stringstream ss(t_str);
+    std::stringstream ss(t_str);
     ss >> hrs >> colon >> mins;
     return hrs * 60 + mins;
 }
 
 // Helper to capitalize category
-string capitalize(string s)
+std::string capitalize(std::string s)
 {
     if (s.empty())
         return s;
-    transform(s.begin(), s.end(), s.begin(), ::tolower);
-    s[0] = toupper(s[0]);
+    std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+    s[0] = std::toupper(s[0]);
     return s;
+}
+
+int allowedLoad(const std::string &pref)
+{
+    if (pref == "single") return 1;
+    if (pref == "double") return 2;
+    if (pref == "triple") return 3;
+    return 1000;
 }
 
 struct Config
@@ -75,7 +84,7 @@ struct Config
     double beta = 10000.0;   // Time Window Penalty
     double gamma = 100000.0; // Capacity/Sharing Penalty
 
-    map<int, int> max_delays = {{1, 10}, {2, 20}, {3, 30}, {4, 45}, {5, 60}};
+    std::vector<int> max_delays = {0, 10, 20, 30, 45, 60}; 
 };
 
 enum NodeType
@@ -87,28 +96,37 @@ enum NodeType
 struct Request
 {
     int id;
-    string original_id;
+    std::string original_id;
     int priority;
-    // Lat/Lng kept for file compatibility but NOT used for calculation
     double pickup_lat, pickup_lng;
     double drop_lat, drop_lng;
     int earliest_pickup;
     int latest_drop;
-    string vehicle_pref;
-    string sharing_pref;
+    std::string vehicle_pref;
+    std::string sharing_pref;
+
+    bool pref_premium = false;
+    int max_sharing = 1000;
+    
+    // NEW: Integer ID for O(1) matrix lookup
+    int matrix_id = -1; 
 };
 
 struct Vehicle
 {
     int id;
-    string original_id;
+    std::string original_id;
     int capacity;
     double cost_per_km;
     double avg_speed_kmph;
-    // Lat/Lng kept for file compatibility but NOT used for calculation
     double current_lat, current_lng;
     int available_from;
-    string category;
+    std::string category;
+
+    bool is_premium = false;
+    
+    // NEW: Integer ID for O(1) matrix lookup
+    int matrix_id = -1; 
 };
 
 struct Node
@@ -132,63 +150,58 @@ struct RouteMetrics
 };
 
 // ==========================================
-// 2. FILE LOADING FUNCTIONS
+// 2. FILE LOADING & INITIALIZATION
 // ==========================================
 
-void loadMetadata(const string &filename, Config &config)
+void loadMetadata(const std::string &filename, Config &config)
 {
-    ifstream file(filename);
+    std::ifstream file(filename);
     if (!file.is_open())
         return;
-    string line;
-    getline(file, line);
+    std::string line;
+    std::getline(file, line);
 
-    while (getline(file, line))
+    if (config.max_delays.size() < 6) config.max_delays.resize(6, 999);
+
+    while (std::getline(file, line))
     {
         if (line.empty())
             continue;
-        stringstream ss(line);
-        string key, valStr;
-        getline(ss, key, ',');
-        getline(ss, valStr, ',');
-        key.erase(remove(key.begin(), key.end(), '\r'), key.end());
-        valStr.erase(remove(valStr.begin(), valStr.end(), '\r'), valStr.end());
+        std::stringstream ss(line);
+        std::string key, valStr;
+        std::getline(ss, key, ',');
+        std::getline(ss, valStr, ',');
+        key.erase(std::remove(key.begin(), key.end(), '\r'), key.end());
+        valStr.erase(std::remove(valStr.begin(), valStr.end(), '\r'), valStr.end());
 
-        if (key == "priority_1_max_delay_min")
-            config.max_delays[1] = stoi(valStr);
-        else if (key == "priority_2_max_delay_min")
-            config.max_delays[2] = stoi(valStr);
-        else if (key == "priority_3_max_delay_min")
-            config.max_delays[3] = stoi(valStr);
-        else if (key == "priority_4_max_delay_min")
-            config.max_delays[4] = stoi(valStr);
-        else if (key == "priority_5_max_delay_min")
-            config.max_delays[5] = stoi(valStr);
-        else if (key == "objective_cost_weight")
-            config.cost_weight = stod(valStr);
-        else if (key == "objective_time_weight")
-            config.time_weight = stod(valStr);
+        if (key == "priority_1_max_delay_min") config.max_delays[1] = std::stoi(valStr);
+        else if (key == "priority_2_max_delay_min") config.max_delays[2] = std::stoi(valStr);
+        else if (key == "priority_3_max_delay_min") config.max_delays[3] = std::stoi(valStr);
+        else if (key == "priority_4_max_delay_min") config.max_delays[4] = std::stoi(valStr);
+        else if (key == "priority_5_max_delay_min") config.max_delays[5] = std::stoi(valStr);
+        else if (key == "objective_cost_weight") config.cost_weight = std::stod(valStr);
+        else if (key == "objective_time_weight") config.time_weight = std::stod(valStr);
     }
 }
 
-vector<Vehicle> loadVehicles(const string &filename)
+std::vector<Vehicle> loadVehicles(const std::string &filename)
 {
-    vector<Vehicle> vehicles;
-    ifstream file(filename);
+    std::vector<Vehicle> vehicles;
+    std::ifstream file(filename);
     if (!file.is_open())
         exit(1);
-    string line;
-    getline(file, line);
+    std::string line;
+    std::getline(file, line);
     int sequential_id = 0;
 
-    while (getline(file, line))
+    while (std::getline(file, line))
     {
         if (line.empty())
             continue;
-        stringstream ss(line);
-        string token;
-        vector<string> row;
-        while (getline(ss, token, ','))
+        std::stringstream ss(line);
+        std::string token;
+        std::vector<std::string> row;
+        while (std::getline(ss, token, ','))
         {
             token.erase(0, token.find_first_not_of(" \t\r\n\""));
             token.erase(token.find_last_not_of(" \t\r\n\"") + 1);
@@ -199,20 +212,24 @@ vector<Vehicle> loadVehicles(const string &filename)
         Vehicle v;
         v.id = sequential_id++;
         v.original_id = row[0];
-        string catStr = row[9];
-        if (catStr == "premium" || catStr == "Premium")
+        std::string catStr = row[9];
+        
+        if (catStr == "premium" || catStr == "Premium") {
             v.category = "premium";
-        else if (catStr == "normal" || catStr == "Normal")
+            v.is_premium = true;
+        }
+        else if (catStr == "normal" || catStr == "Normal") {
             v.category = "normal";
-        else
-            v.category = "any";
+        }
+        else v.category = "any";
+        
         try
         {
-            v.capacity = stoi(row[3]);
-            v.cost_per_km = stod(row[4]);
-            v.avg_speed_kmph = stod(row[5]);
-            v.current_lat = stod(row[6]);
-            v.current_lng = stod(row[7]);
+            v.capacity = std::stoi(row[3]);
+            v.cost_per_km = std::stod(row[4]);
+            v.avg_speed_kmph = std::stod(row[5]);
+            v.current_lat = std::stod(row[6]);
+            v.current_lng = std::stod(row[7]);
             v.available_from = timeStringToMin(row[8]);
         }
         catch (...)
@@ -221,27 +238,28 @@ vector<Vehicle> loadVehicles(const string &filename)
         }
         vehicles.push_back(v);
     }
-    cout << "Loaded " << vehicles.size() << " vehicles from " << filename << "\n";
+    std::cout << "Loaded " << vehicles.size() << " vehicles from " << filename << "\n";
     return vehicles;
 }
 
-vector<Request> loadRequests(const string &filename, const map<int, int> &priority_delays)
+std::vector<Request> loadRequests(const std::string &filename, const std::vector<int> &priority_delays)
 {
-    vector<Request> requests;
-    ifstream file(filename);
+    std::vector<Request> requests;
+    std::ifstream file(filename);
     if (!file.is_open())
         exit(1);
-    string line;
-    getline(file, line);
+    std::string line;
+    std::getline(file, line);
     int sequential_id = 0;
-    while (getline(file, line))
+    
+    while (std::getline(file, line))
     {
         if (line.empty())
             continue;
-        stringstream ss(line);
-        string token;
-        vector<string> row;
-        while (getline(ss, token, ','))
+        std::stringstream ss(line);
+        std::string token;
+        std::vector<std::string> row;
+        while (std::getline(ss, token, ','))
         {
             token.erase(0, token.find_first_not_of(" \t\r\n\""));
             token.erase(token.find_last_not_of(" \t\r\n\"") + 1);
@@ -254,11 +272,11 @@ vector<Request> loadRequests(const string &filename, const map<int, int> &priori
         r.original_id = row[0];
         try
         {
-            r.priority = stoi(row[1]);
-            r.pickup_lat = stod(row[2]);
-            r.pickup_lng = stod(row[3]);
-            r.drop_lat = stod(row[4]);
-            r.drop_lng = stod(row[5]);
+            r.priority = std::stoi(row[1]);
+            r.pickup_lat = std::stod(row[2]);
+            r.pickup_lng = std::stod(row[3]);
+            r.drop_lat = std::stod(row[4]);
+            r.drop_lng = std::stod(row[5]);
             r.earliest_pickup = timeStringToMin(row[6]);
             r.latest_drop = timeStringToMin(row[7]);
         }
@@ -266,26 +284,48 @@ vector<Request> loadRequests(const string &filename, const map<int, int> &priori
         {
             continue;
         }
+        
         r.vehicle_pref = row[8];
-        transform(r.vehicle_pref.begin(), r.vehicle_pref.end(), r.vehicle_pref.begin(), ::tolower);
+        std::transform(r.vehicle_pref.begin(), r.vehicle_pref.end(), r.vehicle_pref.begin(), ::tolower);
+        if (r.vehicle_pref == "premium") r.pref_premium = true;
+
         r.sharing_pref = row[9];
-        transform(r.sharing_pref.begin(), r.sharing_pref.end(), r.sharing_pref.begin(), ::tolower);
+        std::transform(r.sharing_pref.begin(), r.sharing_pref.end(), r.sharing_pref.begin(), ::tolower);
+        r.max_sharing = allowedLoad(r.sharing_pref);
+        
         requests.push_back(r);
     }
-    cout << "Loaded " << requests.size() << " requests from " << filename << "\n";
+    std::cout << "Loaded " << requests.size() << " requests from " << filename << "\n";
     return requests;
 }
 
-int allowedLoad(const string &pref)
-{
-    string p = pref;
-    if (p == "single")
-        return 1;
-    if (p == "double")
-        return 2;
-    if (p == "triple")
-        return 3;
-    return 1000;
+// NEW: Build the O(1) Matrix
+void buildFastMatrix(std::vector<Vehicle>& vehicles, std::vector<Request>& requests) {
+    int total_nodes = vehicles.size() + requests.size() + 1;
+    fast_distance.assign(total_nodes, std::vector<double>(total_nodes, 0.0));
+    
+    std::vector<std::string> id_to_str(total_nodes);
+    int current_id = 0;
+    
+    for (auto& v : vehicles) {
+        v.matrix_id = current_id;
+        id_to_str[current_id++] = v.original_id;
+    }
+    for (auto& r : requests) {
+        r.matrix_id = current_id;
+        id_to_str[current_id++] = r.original_id;
+    }
+    
+    office_matrix_id = current_id;
+    id_to_str[current_id++] = "OFFICE";
+    
+    // Call the external string-based function exactly ONCE per pair
+    for (int i = 0; i < total_nodes; ++i) {
+        for (int j = 0; j < total_nodes; ++j) {
+            fast_distance[i][j] = getDistanceFromMatrix(id_to_str[i], id_to_str[j]);
+        }
+    }
+    std::cout << "Fast O(1) distance matrix built successfully.\n";
 }
 
 // ==========================================
@@ -296,25 +336,26 @@ class Route
 {
 public:
     int vehicle_index;
-    vector<Node> sequence;
-    set<int> served_employees;
+    std::vector<Node> sequence;
+    std::set<int> served_employees; 
 
     Route(int v_idx) : vehicle_index(v_idx) {}
 
-    RouteMetrics evaluate(const vector<Vehicle> &vehicles, const vector<Request> &requests, const Config &config)
+    RouteMetrics evaluate(const std::vector<Vehicle> &vehicles, const std::vector<Request> &requests, const Config &config)
     {
         const Vehicle &veh = vehicles[vehicle_index];
 
-        // Track ID for matrix lookups
-        string current_id = veh.original_id;
+        // PURE INTEGER ID TRACKING
+        int current_id = veh.matrix_id;
         double current_time = veh.available_from;
 
         double total_dist = 0.0;
         double total_passenger_time = 0.0;
         int current_load = 0;
 
-        map<int, double> pickup_times;
-        set<int> onboard;
+        std::vector<double> pickup_times(requests.size(), 0.0);
+        std::vector<int> onboard; 
+        onboard.reserve(veh.capacity + 2); 
 
         RouteMetrics m = {true, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
@@ -322,21 +363,12 @@ public:
         {
             const Request &req = requests[node.emp_index];
 
-            // Determine Target ID
-            string target_id;
-            if (node.type == PICKUP)
-            {
-                target_id = req.original_id; // e.g., "E1"
-            }
-            else
-            {
-                target_id = "OFFICE"; // All employees drop at common location
-            }
+            // O(1) Target Lookup
+            int target_id = (node.type == PICKUP) ? req.matrix_id : office_matrix_id;
 
-            // === STRICT MATRIX DISTANCE & TIME ===
-            // Note: matrix.cpp handles asymmetry (row=current, col=target)
-            double dist = getDistanceFromMatrix(current_id, target_id);
-            double travel_time = (double)getTravelTimeFromMatrix(current_id, target_id, veh.avg_speed_kmph);
+            // O(1) Distance & Inline Math Time Retrieval
+            double dist = fast_distance[current_id][target_id];
+            double travel_time = (dist / veh.avg_speed_kmph) * 60.0;
 
             total_dist += dist;
             current_time += travel_time;
@@ -353,39 +385,35 @@ public:
             {
                 pickup_times[node.emp_index] = current_time;
                 current_load++;
-                onboard.insert(node.emp_index);
+                onboard.push_back(node.emp_index);
 
                 if (current_load > veh.capacity)
                     m.capacity_violation += (current_load - veh.capacity);
-                if (req.vehicle_pref == "premium" && veh.category != "premium")
-                    m.capacity_violation += 10000;
+                if (req.pref_premium && !veh.is_premium)
+                    m.capacity_violation += 10000; 
+
             }
             else
-            { // DROP
+            { 
                 double drop_time = current_time;
                 current_load--;
-                onboard.erase(node.emp_index);
+                
+                auto it = std::find(onboard.begin(), onboard.end(), node.emp_index);
+                if (it != onboard.end()) onboard.erase(it);
 
-                // Get the allowed buffer for this priority
-                int buffer = 0;
-                if (config.max_delays.count(req.priority))
-                    buffer = config.max_delays.at(req.priority);
+                int buffer = (req.priority < config.max_delays.size()) ? config.max_delays[req.priority] : 0;
 
-                // Allow drop_time to go up to (latest_drop + buffer)
                 if (drop_time > req.latest_drop + buffer)
                     m.time_window_violation += (drop_time - (req.latest_drop + buffer));
 
-                // Direct distance for Delay check: Pickup(E_id) -> Drop(OFFICE)
-                // Note: The logic handles asymmetry if matrix[E][OFFICE] != matrix[OFFICE][E]
-                double direct_dist = getDistanceFromMatrix(req.original_id, "OFFICE");
-                double direct_time = (double)getTravelTimeFromMatrix(req.original_id, "OFFICE", veh.avg_speed_kmph);
+                // O(1) Direct Distance Check
+                double direct_dist = fast_distance[req.matrix_id][office_matrix_id];
+                double direct_time = (direct_dist / veh.avg_speed_kmph) * 60.0;
 
                 double actual_ride_time = drop_time - pickup_times[node.emp_index];
                 double delay = actual_ride_time - direct_time;
 
-                int max_allowed_delay = 999;
-                if (config.max_delays.count(req.priority))
-                    max_allowed_delay = config.max_delays.at(req.priority);
+                int max_allowed_delay = (req.priority < config.max_delays.size()) ? config.max_delays[req.priority] : 999;
 
                 if (delay > max_allowed_delay)
                     m.ride_time_violation += (delay - max_allowed_delay);
@@ -396,17 +424,16 @@ public:
             int max_allowed_sharing = veh.capacity;
             for (int e_idx : onboard)
             {
-                max_allowed_sharing = min(max_allowed_sharing, allowedLoad(requests[e_idx].sharing_pref));
+                max_allowed_sharing = std::min(max_allowed_sharing, requests[e_idx].max_sharing);
             }
             if (current_load > max_allowed_sharing)
                 m.capacity_violation += (current_load - max_allowed_sharing);
 
-            // Update current_id for next iteration
             current_id = target_id;
         }
 
         if (current_load != 0)
-            m.capacity_violation += abs(current_load) * 100;
+            m.capacity_violation += std::abs(current_load) * 100;
 
         m.total_cost = total_dist * veh.cost_per_km;
         m.total_time = total_passenger_time;
@@ -427,14 +454,14 @@ public:
 class Solution
 {
 public:
-    vector<Route> routes;
-    vector<int> unassigned_requests;
+    std::vector<Route> routes;
+    std::vector<int> unassigned_requests;
     double total_score;
     bool feasible;
 
     Solution() : total_score(INF), feasible(false) {}
 
-    void calculateTotalScore(const vector<Vehicle> &vehicles, const vector<Request> &requests, const Config &config)
+    void calculateTotalScore(const std::vector<Vehicle> &vehicles, const std::vector<Request> &requests, const Config &config)
     {
         double score = 0;
         bool all_routes_feasible = true;
@@ -457,16 +484,16 @@ public:
 
 class VNSSolver
 {
-    vector<Request> requests;
-    vector<Vehicle> vehicles;
+    std::vector<Request> requests;
+    std::vector<Vehicle> vehicles;
     Config config;
-    mt19937 rng;
+    std::mt19937 rng;
 
 public:
-    VNSSolver(vector<Request> e, vector<Vehicle> v, Config c)
+    VNSSolver(std::vector<Request> e, std::vector<Vehicle> v, Config c)
         : requests(e), vehicles(v), config(c)
     {
-        rng = mt19937(static_cast<unsigned int>(time(0)));
+        rng = std::mt19937(static_cast<unsigned int>(time(0)));
     }
 
     void repair(Solution &sol)
@@ -480,9 +507,11 @@ public:
 
                 if (!m.feasible && !route.served_employees.empty())
                 {
-                    vector<int> emps(route.served_employees.begin(), route.served_employees.end());
-                    int emp_to_remove = emps[rng() % emps.size()];
-                    vector<Node> new_seq;
+                    std::vector<int> emps(route.served_employees.begin(), route.served_employees.end());
+                    std::uniform_int_distribution<int> dist(0, emps.size() - 1);
+                    int emp_to_remove = emps[dist(rng)];
+                    
+                    std::vector<Node> new_seq;
                     for (auto &n : route.sequence)
                         if (n.emp_index != emp_to_remove)
                             new_seq.push_back(n);
@@ -493,29 +522,29 @@ public:
             }
         }
 
-        vector<int> unassigned = sol.unassigned_requests;
+        std::vector<int> unassigned = sol.unassigned_requests;
         sol.unassigned_requests.clear();
-        shuffle(unassigned.begin(), unassigned.end(), rng);
+        std::shuffle(unassigned.begin(), unassigned.end(), rng);
 
         for (int emp_idx : unassigned)
         {
             double best_insertion_cost = INF;
             int best_r = -1;
-            vector<Node> best_seq;
+            std::vector<Node> best_seq;
 
             for (size_t r = 0; r < sol.routes.size(); ++r)
             {
                 Route cur = sol.routes[r];
                 double base_score = cur.evaluate(vehicles, requests, config).objective_score;
 
-                vector<Node> temp = cur.sequence;
+                std::vector<Node> temp = cur.sequence;
                 temp.push_back({PICKUP, emp_idx, 0, 0});
                 temp.push_back({DROP, emp_idx, 0, 0});
 
                 cur.sequence = temp;
                 RouteMetrics m = cur.evaluate(vehicles, requests, config);
 
-                if (m.objective_score < base_score + 1000000.0)
+                if (m.objective_score < base_score + 10000000.0)
                 {
                     if (m.objective_score < best_insertion_cost)
                     {
@@ -544,17 +573,17 @@ public:
         for (size_t i = 0; i < vehicles.size(); ++i)
             sol.routes.emplace_back(i);
 
-        vector<int> sorted_indices(requests.size());
+        std::vector<int> sorted_indices(requests.size());
         for (size_t i = 0; i < requests.size(); ++i)
             sorted_indices[i] = i;
-        sort(sorted_indices.begin(), sorted_indices.end(), [&](int a, int b)
+        std::sort(sorted_indices.begin(), sorted_indices.end(), [&](int a, int b)
              { return requests[a].earliest_pickup < requests[b].earliest_pickup; });
 
         for (int emp_idx : sorted_indices)
         {
             double best_score = INF;
             int best_r = -1;
-            vector<Node> best_seq;
+            std::vector<Node> best_seq;
 
             for (size_t r = 0; r < sol.routes.size(); ++r)
             {
@@ -564,7 +593,7 @@ public:
                 {
                     for (int j = i + 1; j <= n + 1; ++j)
                     {
-                        vector<Node> temp = cur.sequence;
+                        std::vector<Node> temp = cur.sequence;
                         temp.insert(temp.begin() + i, {PICKUP, emp_idx, 0, 0});
                         temp.insert(temp.begin() + j, {DROP, emp_idx, 0, 0});
                         cur.sequence = temp;
@@ -604,10 +633,10 @@ public:
             {
                 improved = false;
                 double current_score = route.evaluate(vehicles, requests, config).objective_score;
-                vector<int> emps(route.served_employees.begin(), route.served_employees.end());
+                std::vector<int> emps(route.served_employees.begin(), route.served_employees.end());
                 for (int emp : emps)
                 {
-                    vector<Node> temp_seq;
+                    std::vector<Node> temp_seq;
                     for (auto &n : route.sequence)
                         if (n.emp_index != emp)
                             temp_seq.push_back(n);
@@ -617,7 +646,7 @@ public:
                     {
                         for (int j = i + 1; j <= n + 1; ++j)
                         {
-                            vector<Node> test = temp_seq;
+                            std::vector<Node> test = temp_seq;
                             test.insert(test.begin() + i, {PICKUP, emp, 0, 0});
                             test.insert(test.begin() + j, {DROP, emp, 0, 0});
                             Route r_test = route;
@@ -636,11 +665,11 @@ public:
         }
     }
 
-    Solution shaking(Solution sol, int k)
+    void shaking(Solution &sol, int k)
     {
         for (int op = 0; op < k; ++op)
         {
-            vector<int> current_active;
+            std::vector<int> current_active;
             for (size_t i = 0; i < sol.routes.size(); ++i)
             {
                 if (!sol.routes[i].served_employees.empty())
@@ -648,24 +677,29 @@ public:
             }
             if (current_active.empty())
                 break;
-            int r_idx = current_active[rng() % current_active.size()];
+            
+            std::uniform_int_distribution<int> active_dist(0, current_active.size() - 1);
+            int r_idx = current_active[active_dist(rng)];
+            
             if (sol.routes[r_idx].served_employees.empty())
                 continue;
             auto it = sol.routes[r_idx].served_employees.begin();
-            advance(it, rng() % sol.routes[r_idx].served_employees.size());
+            std::advance(it, rng() % sol.routes[r_idx].served_employees.size());
             int emp = *it;
-            vector<Node> new_seq;
+            
+            std::vector<Node> new_seq;
             for (auto &n : sol.routes[r_idx].sequence)
                 if (n.emp_index != emp)
                     new_seq.push_back(n);
             sol.routes[r_idx].sequence = new_seq;
             sol.routes[r_idx].served_employees.erase(emp);
-            int dest = rng() % sol.routes.size();
+            
+            std::uniform_int_distribution<int> route_dist(0, sol.routes.size() - 1);
+            int dest = route_dist(rng);
             sol.routes[dest].sequence.push_back({PICKUP, emp, 0, 0});
             sol.routes[dest].sequence.push_back({DROP, emp, 0, 0});
             sol.routes[dest].served_employees.insert(emp);
         }
-        return sol;
     }
 
     Solution solve(int max_iterations, int &iterations_done)
@@ -678,7 +712,10 @@ public:
         for (int iter = 0; iter < max_iterations; ++iter)
         {
             iterations_done = iter + 1;
-            Solution s_prime = shaking(current_sol, k);
+            
+            Solution s_prime = current_sol; 
+            shaking(s_prime, k);
+            
             localSearch(s_prime);
             repair(s_prime);
             s_prime.calculateTotalScore(vehicles, requests, config);
@@ -711,7 +748,7 @@ int main(int argc, char **argv)
     // 1. Check for single argument (the temp directory)
     if (argc < 2)
     {
-        cerr << "Usage: " << argv[0] << " <temp_directory_path>" << endl;
+        std::cerr << "Usage: " << argv[0] << " <temp_directory_path>\n";
         return 1;
     }
 
@@ -720,7 +757,7 @@ int main(int argc, char **argv)
 
     if (!fs::exists(base_dir))
     {
-        cerr << "Error: Directory " << base_dir << " does not exist." << endl;
+        std::cerr << "Error: Directory " << base_dir << " does not exist.\n";
         return 1;
     }
 
@@ -734,28 +771,31 @@ int main(int argc, char **argv)
     fs::path employees_path = base_dir / "employees.csv";
     fs::path matrix_path = base_dir / "matrix.txt";
 
-    cout << "Loading metadata from " << metadata_path << "..." << endl;
+    std::cout << "Loading metadata from " << metadata_path << "...\n";
     loadMetadata(metadata_path.string(), config);
 
-    cout << "Loading data..." << endl;
-    vector<Vehicle> vehicles = loadVehicles(vehicles_path.string());
-    vector<Request> requests = loadRequests(employees_path.string(), config.max_delays);
+    std::cout << "Loading data...\n";
+    std::vector<Vehicle> vehicles = loadVehicles(vehicles_path.string());
+    std::vector<Request> requests = loadRequests(employees_path.string(), config.max_delays);
 
     if (requests.empty() || vehicles.empty())
     {
-        cerr << "Error: No data loaded. Exiting." << endl;
+        std::cerr << "Error: No data loaded. Exiting.\n";
         return 1;
     }
 
-    // === CRITICAL: CALCULATE MATRIX SIZE AND LOAD ===
     N = requests.size();
     V = vehicles.size();
-    int matrix_size = N + V + 1; // Emp + Veh + Office
+    int matrix_size = N + V + 1; 
 
-    cout << "Loading matrix from " << matrix_path << " (Expecting " << matrix_size << "x" << matrix_size << ")..." << endl;
+    std::cout << "Loading matrix from " << matrix_path << " (Expecting " << matrix_size << "x" << matrix_size << ")...\n";
     loadMatrix(matrix_path.string(), matrix_size);
+    
+    // NEW: Build the O(1) Matrix right after loading
+    std::cout << "Building fast lookup matrix...\n";
+    buildFastMatrix(vehicles, requests);
 
-    cout << "=== Running VNS Solver ===" << endl;
+    std::cout << "=== Running VNS Solver ===\n";
     VNSSolver solver(requests, vehicles, config);
     int iterations_done = 0;
 
@@ -764,43 +804,38 @@ int main(int argc, char **argv)
     for (auto& r : final_solution.routes) {
         if (r.served_employees.empty()) continue;
         
-        // Re-evaluate to get the raw metrics (cost, time, etc.)
         RouteMetrics m = r.evaluate(vehicles, requests, config);
-        
-        // Sum only cost and time weights (ignoring alpha, beta, gamma penalties)
         final_base_obj += (config.cost_weight * m.total_cost) + (config.time_weight * m.total_time);
     } 
 
-    cout << "Final Objective: " << fixed << setprecision(1) << final_base_obj << endl;
-
-    cout << "Final Total Score (With Penalties): " << fixed << setprecision(1) << final_solution.total_score << endl;
-
-    cout << "Unassigned Employees: " << final_solution.unassigned_requests.size() << endl;
-
-    cout << "Iterations: " << iterations_done << endl;
+    std::cout << "Final Objective: " << std::fixed << std::setprecision(1) << final_base_obj << "\n";
+    std::cout << "Final Total Score (With Penalties): " << std::fixed << std::setprecision(1) << final_solution.total_score << "\n";
+    std::cout << "Unassigned Employees: " << final_solution.unassigned_requests.size() << "\n";
+    std::cout << "Iterations: " << iterations_done << "\n";
 
     // === 4. OUTPUT GENERATION (DIRECTLY IN TEMP DIR) ===
-    cout << "Generating CSV files..." << endl;
+    std::cout << "Generating CSV files...\n";
 
-    // CHANGED: No longer creating "Heterogeneous_DARP" folder.
-    // Saving directly to the temp directory provided in argv[1].
-    fs::path emp_out_path = base_dir / "Heterogeneous_DARP/output_employees.csv";
-    fs::path veh_out_path = base_dir / "Heterogeneous_DARP/output_vehicle.csv";
+    fs::path emp_out_path = base_dir / "Heterogeneous_DARP" / "output_employees.csv";
+    fs::path veh_out_path = base_dir / "Heterogeneous_DARP" / "output_vehicle.csv";
 
-    ofstream emp_file(emp_out_path);
-    ofstream veh_file(veh_out_path);
+    // Ensure the output directory exists before writing
+    fs::create_directories(emp_out_path.parent_path());
+
+    std::ofstream emp_file(emp_out_path);
+    std::ofstream veh_file(veh_out_path);
 
     if (!emp_file.is_open() || !veh_file.is_open())
     {
-        cerr << "Error: Could not open output files for writing at " << base_dir << endl;
+        std::cerr << "Error: Could not open output files for writing at " << base_dir << "\n";
         return 1;
     }
 
-    cout << "Writing to: " << emp_out_path << endl;
-    cout << "Writing to: " << veh_out_path << endl;
+    std::cout << "Writing to: " << emp_out_path << "\n";
+    std::cout << "Writing to: " << veh_out_path << "\n";
 
-    emp_file << "employee_id,pickup_time,drop_time" << endl;
-    veh_file << "vehicle_id,category,employee_id,pickup_time,drop_time" << endl;
+    emp_file << "employee_id,pickup_time,drop_time\n";
+    veh_file << "vehicle_id,category,employee_id,pickup_time,drop_time\n";
 
     for (size_t i = 0; i < final_solution.routes.size(); ++i)
     {
@@ -810,10 +845,10 @@ int main(int argc, char **argv)
 
         r.evaluate(vehicles, requests, config); // Finalize times
 
-        map<int, string> pickup_times;
+        std::vector<std::string> pickup_times(requests.size());
         for (const auto &node : r.sequence)
         {
-            string time_str = minToTime((int)node.arrival_time);
+            std::string time_str = minToTime((int)node.arrival_time);
 
             if (node.type == PICKUP)
             {
@@ -821,25 +856,24 @@ int main(int argc, char **argv)
             }
             else if (node.type == DROP)
             {
-                string p_time = pickup_times[node.emp_index];
-                string d_time = time_str;
-                string e_id = requests[node.emp_index].original_id;
-                string v_id = vehicles[i].original_id;
-                string v_cat = capitalize(vehicles[i].category);
+                std::string p_time = pickup_times[node.emp_index];
+                std::string d_time = time_str;
+                std::string e_id = requests[node.emp_index].original_id;
+                std::string v_id = vehicles[i].original_id;
+                std::string v_cat = capitalize(vehicles[i].category);
 
-                veh_file << v_id << "," << v_cat << "," << e_id << "," << p_time << "," << d_time << endl;
-                emp_file << e_id << "," << p_time << "," << d_time << endl;
+                veh_file << v_id << "," << v_cat << "," << e_id << "," << p_time << "," << d_time << "\n";
+                emp_file << e_id << "," << p_time << "," << d_time << "\n";
             }
         }
     }
 
     emp_file.close();
     veh_file.close();
-    cout << "Successfully created 'output_employees.csv' and 'output_vehicle.csv'" << endl;
+    std::cout << "Successfully created 'output_employees.csv' and 'output_vehicle.csv'\n";
 
     auto end_time = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end_time - start_time;
-    cout << "Total Execution Time: " << fixed << setprecision(2) << elapsed.count() << " seconds" << endl;
+    std::cout << "Total Execution Time: " << std::fixed << std::setprecision(2) << elapsed.count() << " seconds\n";
     return 0;
-
 }

@@ -26,4 +26,4 @@ extern double WEIGHT_TIME;
 
 void loadMatrix(const std::string &filename, DARPInstance &instance, int num_employees, int num_vehicles);
 
-void write_output_csvs(const Solution &solution, DARPInstance &instance);
+void write_output_csvs(const Solution &solution, DARPInstance &instance, std::string god);

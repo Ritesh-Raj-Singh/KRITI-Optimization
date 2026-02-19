@@ -49,18 +49,15 @@ bool FeasibilityChecker::runEightStepEvaluation(const std::vector<int> &route_id
         const Node &n_curr = nodes[curr];
         const Node &n_prev = nodes[prev];
 
-        // --- UPDATED LOGIC START: OPEN VRP ---
-        // If the next node is the Dummy End, travel time is 0.
-        // This means the vehicle "teleports" to the end state instantly after the last job.
+        // Fast integer-index lookup: no string allocation or parsing.
+        // getMatrixIndex() maps node type → row/col in the distance matrix directly.
         int travel = 0;
-        std::string from_id = n_prev.getMatrixId(requests, vehicles);
-        std::string to_id = n_curr.getMatrixId(requests, vehicles);
         if (n_curr.type != Node::DUMMY_END)
         {
-            travel = getTravelTimeFromMatrix(from_id, to_id,
-                                             vehicle.avg_speed_kmh);
+            travel = getTravelTimeByIndex(n_prev.getMatrixIndex(),
+                                          n_curr.getMatrixIndex(),
+                                          vehicle.avg_speed_kmh);
         }
-        // --- UPDATED LOGIC END ---
 
         A[i] = D[i - 1] + travel;
         W[i] = std::max(0, n_curr.earliest_time - A[i]);

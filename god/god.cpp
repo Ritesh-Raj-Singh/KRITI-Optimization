@@ -11,18 +11,13 @@
 
 int main(int argc, char *argv[])
 {
-    if (argc < 5)
-    {
-        std::cerr << "Usage: " << argv[0]
-                  << " <vehicle_file> <employee_file> <matrix_file> <metadata_file>"
-                  << " [max_iterations] [h]\n";
-        return 1;
-    }
 
-    std::string vehicle_file = argv[1];
-    std::string employee_file = argv[2];
-    std::string matrix_file = argv[3];
-    std::string metadata_file = argv[4];
+    std::string base = argv[1];
+
+    std::string vehicle_file = base + "/vehicles.csv";
+    std::string employee_file = base + "/employees.csv";
+    std::string matrix_file = base + "/matrix.txt";
+    std::string metadata_file = base + "/metadata.csv";
 
     long long max_iterations = (argc > 5) ? std::atoll(argv[5]) : Params::DEFAULT_MAX_ITERATIONS;
     int h = (argc > 6) ? std::atoi(argv[6]) : Params::DEFAULT_H;
@@ -96,8 +91,7 @@ int main(int argc, char *argv[])
     std::cout << "Total distance:   " << total_distance << "\n";
     std::cout << "Total duration:   " << total_duration << "\n";
     std::cout << "Objective cost:   " << objective_cost << "\n";
-
-    write_output_csvs(best, instance);
+    write_output_csvs(best, instance, base);
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> duration = end - start;

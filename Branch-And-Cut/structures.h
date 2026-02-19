@@ -109,6 +109,20 @@ struct Node
         return "";
     }
 
+    // Fast integer index into the distance matrix — no string allocation or parsing.
+    // Mirrors convert():  PICKUP/E{i+1} -> i,  DUMMY_START/V{k+1} -> N+k,  everything else -> N+V
+    inline int getMatrixIndex() const
+    {
+        if (type == PICKUP)
+            return request_id; // request_id is 0-based → column index i
+
+        if (type == DUMMY_START)
+            return N + vehicle_id; // vehicle_id is 0-based → column index N+k
+
+        // DELIVERY, DUMMY_END, SUPER_SINK, SUPER_SOURCE → OFFICE column
+        return N + V;
+    }
+
     std::string getOriginalRequestId(const std::vector<Request> &reqs) const
     {
         if ((type == PICKUP || type == DELIVERY) &&

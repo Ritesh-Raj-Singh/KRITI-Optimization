@@ -1,6 +1,6 @@
 #include "crow_all.h"
 #include "json.hpp"
-#include<bits/stdc++.h>
+#include <bits/stdc++.h>
 
 #define M_PI 3.14159265358979323846
 
@@ -66,16 +66,17 @@ void cleanup_tmp_dir(const fs::path &dir)
     fs::remove_all(dir, ec);
 }
 
-
 int do_haversine = 0;
-double toRadians(double degree) {
+double toRadians(double degree)
+{
     return degree * (M_PI / 180.0);
 }
 
-double haversine(double lat1, double lon1, double lat2, double lon2) {
+double haversine(double lat1, double lon1, double lat2, double lon2)
+{
     // Earth's radius in kilometers
-    const double R = 6371.0; 
-    
+    const double R = 6371.0;
+
     // If you need Miles, use R = 3958.8;
 
     // Convert differences to radians
@@ -87,9 +88,9 @@ double haversine(double lat1, double lon1, double lat2, double lon2) {
     lat2 = toRadians(lat2);
 
     // Apply formula
-    double a = std::pow(std::sin(dLat / 2), 2) + 
+    double a = std::pow(std::sin(dLat / 2), 2) +
                std::pow(std::sin(dLon / 2), 2) * std::cos(lat1) * std::cos(lat2);
-               
+
     double c = 2 * std::atan2(std::sqrt(a), std::sqrt(1 - a));
 
     return R * c;
@@ -104,9 +105,8 @@ struct TempDirGuard
     {
         if (active)
             cleanup_tmp_dir(dir);
-        }
-    };
-    
+    }
+};
 
 /* ===================== STEP 1: MATRIX GENERATION ===================== */
 json generate_matrix_file(const std::string &empData,
@@ -225,7 +225,8 @@ json generate_matrix_file(const std::string &empData,
             json j;
             jf >> j;
 
-            if (!j.contains("distances") && !do_haversine){
+            if (j.contains("distances") && !do_haversine)
+            {
                 // return;
 
                 auto distances = j["distances"];
@@ -239,15 +240,16 @@ json generate_matrix_file(const std::string &empData,
                     }
                 }
             }
-            else{
+            else
+            {
                 for (size_t i = 0; i < srcBlock.size(); ++i)
                 {
                     for (size_t k = 0; k < dstBlock.size(); ++k)
                     {
                         outMatrix[srcBlock[i]][dstBlock[k]] =
                             // distances[i][k].get<double>() / 1000.0;
-                            haversine(coords[srcBlock[i]].first, coords[srcBlock[i]].second, 
-                            coords[dstBlock[k]].first, coords[dstBlock[k]].second);
+                            haversine(coords[srcBlock[i]].first, coords[srcBlock[i]].second,
+                                      coords[dstBlock[k]].first, coords[dstBlock[k]].second);
                     }
                 }
             }
@@ -353,7 +355,6 @@ SolverResult run_solver(std::string folderName, std::string execName, fs::path r
 }
 /* ===================== MAIN SERVER ===================== */
 
-
 int main()
 {
     crow::SimpleApp app;
@@ -402,7 +403,7 @@ int main()
         std::ifstream read_metadata("metadata.csv");
         std::string metadata_line;
         for(size_t i = 0; i < 4; i++) getline(read_metadata, metadata_line);
-        if(metadata_line=="distance_method,haversine") do_haversine = 1;
+        // if(metadata_line=="distance_method,haversine") do_haversine = 1;
 
         // 4. Generate Matrix
         Matrix internal_matrix; 
@@ -415,19 +416,21 @@ int main()
 
         // 5. Run Algorithms
         // Note: Ensure your external programs (main_ALNS, etc.) accept the directory path as the first argument!
-        SolverResult alns_res, bac_res, crds_res, hd_res, vns_res;
+        SolverResult alns_res, bac_res, crds_res, hd_res, vns_res, god, mem;
 
         std::thread t1([&](){ alns_res = run_solver("ALNS", "main_ALNS", reqDir); });
         std::thread t2([&](){ bac_res = run_solver("Branch-And-Cut", "main_BAC", reqDir); });
         std::thread t3([&](){ crds_res = run_solver("Clustering-Routing-DP-Solver", "main_crds", reqDir); });
         std::thread t4([&](){ hd_res = run_solver("Heterogeneous_DARP", "hetero", reqDir); });
         std::thread t5([&](){ vns_res = run_solver("Variable_Neighbourhood_Search", "main_vns", reqDir); });
+        std::thread t6([&](){ god = run_solver("god", "god", reqDir); });
 
         t1.join();
         t2.join();
         t3.join();
         t4.join();
         t5.join();
+        t6.join();
         
         // 6. Build Response
         json response;
@@ -467,6 +470,22 @@ int main()
             {"logs", vns_res.logs},
             {"csv_vehicle", vns_res.output_vehicle},
             {"csv_employee", vns_res.output_employee}
+        };
+
+        response["results"]["GOD"] = {
+            {"status", god.status},
+            {"logs", god.logs},
+            {"csv_vehicle", god.output_vehicle},
+            {"csv_employee", god.output_employee}
+        };
+
+        mem = run_solver("memetic_algorithm", "main_Memetic", reqDir);
+
+        response["results"]["mem"] = {
+            {"status", mem.status},
+            {"logs", mem.logs},
+            {"csv_vehicle", mem.output_vehicle},
+            {"csv_employee", mem.output_employee}
         };
 
         crow::response res(200, response.dump());
