@@ -9,9 +9,9 @@ static double priorityPenalty(int p){
     return 0.0 * (6-p) * (6-p); 
 }
 
-double routeCost(const Route& r, const Vehicle& v, const std::vector<Employee>& emp, const Metadata& meta){
-    if (r.seq.empty()) return 0.0;
-    if (!r.isDirty) return r.cachedCost;
+CostComponents getRouteCostComponents(const Route& r, const Vehicle& v, const std::vector<Employee>& emp, const Metadata& meta){
+    CostComponents cc = {0.0, 0.0, 0.0};
+    if (r.seq.empty()) return cc;
 
     std::vector<double> pickupTime(emp.size(), -1); //1
 
@@ -45,10 +45,8 @@ double routeCost(const Route& r, const Vehicle& v, const std::vector<Employee>& 
             double due = e.due +getMaxLateness(e.priority,meta);
             if (arrival > due) {
                 double lateMins = arrival - due;
-                // Exponential penalty: 2^(20 + 15/180 * lateMins)
-                // Scales from 2^20 at 0 min to 2^35 at 180 min
-                double exponent = 40.0 + (40.0 / 180.0) * lateMins;
-                penaltyCost += std::pow(2.0, exponent);
+                // Linear penalty: 100000 * lateMins
+                penaltyCost += 100000.0 * lateMins;
 
             } else {
 
@@ -63,12 +61,12 @@ double routeCost(const Route& r, const Vehicle& v, const std::vector<Employee>& 
     for (int eId : r.seq) {
         const auto& e = emp[eId];
 
-        // Vehicle Mismatch Penalty (2^20)
+        // Vehicle Mismatch Penalty
         if (e.vehiclePref == "premium" && !v.premium) {
-            penaltyCost += std::pow(2.0, 20.0);
+            penaltyCost += 100000.0;
         } 
         else if (e.vehiclePref == "normal" && v.premium) {
-
+             // No penalty for normal in premium
         }
         // "any" gets no penalty
         
@@ -126,7 +124,20 @@ double routeCost(const Route& r, const Vehicle& v, const std::vector<Employee>& 
     
     double operationalCost = (travelMoneyCost * meta.objectiveCostWeight) + (duration * meta.objectiveTimeWeight);
     
-    r.cachedCost = operationalCost + penaltyCost;
+    cc.operationalCost = operationalCost;
+    cc.penaltyCost = penaltyCost;
+    cc.totalCost = operationalCost + penaltyCost;
+    
+    return cc;
+}
+
+double routeCost(const Route& r, const Vehicle& v, const std::vector<Employee>& emp, const Metadata& meta){
+    if (r.seq.empty()) return 0.0;
+    if (!r.isDirty) return r.cachedCost;
+
+    CostComponents cc = getRouteCostComponents(r, v, emp, meta);
+    
+    r.cachedCost = cc.totalCost;
     r.isDirty = false;
     return r.cachedCost;
 }

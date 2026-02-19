@@ -57,7 +57,7 @@ std::vector<Route> solveALNS(
     double T = 1000.0;
 
     // ------------------ Main loop ------------------
-    int tot_it =50000;
+    int tot_it =1000000;
     for (int it = 1; it < tot_it; it++) {
     
         int pIdx = std::uniform_int_distribution<>(0, POOL_SIZE - 1)(rng);
@@ -147,7 +147,7 @@ std::vector<Route> solveALNS(
         rStats[r].uses++;
 
         // ----- Cooling -----
-        T *= 0.999;
+        T *= 0.9999;
 
         if (it % 200 == 0) {
             for (auto& o : dStats) {

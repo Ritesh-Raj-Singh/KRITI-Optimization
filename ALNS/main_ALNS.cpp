@@ -165,7 +165,18 @@ void generateOutputFiles(const std::vector<Route> &solution, const std::vector<V
 
     std::cout << "Writing outputs to: " << vPath << "\n";
 
-    vFile << "vehicle_id,category,employee_id,pickup_time,drop_time\n";
+    double totalOpCost = 0.0;
+    double totalPenalty = 0.0;
+
+    for (const Route &r : solution) {
+        if (r.seq.empty()) continue;
+        CostComponents cc = getRouteCostComponents(r, vehicles[r.vehicleId], emp, meta);
+        totalOpCost += cc.operationalCost;
+        totalPenalty += cc.penaltyCost;
+    }
+
+    vFile << std::fixed << std::setprecision(2) << totalOpCost << "," << totalPenalty << "\n";
+    //vFile << "vehicle_id,category,employee_id,pickup_time,drop_time\n";
     eFile << "employee_id,pickup_time,drop_time\n";
 
     for (const Route &r : solution)

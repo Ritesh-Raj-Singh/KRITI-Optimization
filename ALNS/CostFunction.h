@@ -6,6 +6,13 @@
 
 #include "CSVReader.h" // For Metadata
 
+struct CostComponents {
+    double operationalCost;
+    double penaltyCost;
+    double totalCost;
+};
+
+CostComponents getRouteCostComponents(const Route&, const Vehicle&, const std::vector<Employee>&, const Metadata&);
 double routeCost(const Route&, const Vehicle&, const std::vector<Employee>&, const Metadata&);
 
 inline double getMaxLateness(int priority, Metadata meta) {
