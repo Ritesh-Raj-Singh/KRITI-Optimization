@@ -879,8 +879,8 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    outFileVeh << "vehicle_id,category,employee_id,pickup_time,drop_time" << endl;
-    outFileEmp << "employee_id,pickup_time,drop_time" << endl;
+    // outFileVeh << "vehicle_id,category,employee_id,pickup_time,drop_time" << endl;
+    // outFileEmp << "employee_id,pickup_time,drop_time" << endl;
 
     cout << "=== CLUSTERING & ROUTE GENERATION LOG ===" << endl;
 
