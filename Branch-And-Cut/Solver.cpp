@@ -189,8 +189,8 @@ void Solver::buildRegretSolution(Solution &sol)
             for (auto &[veh_id, route] : sol.routes)
             {
                 int v_idx = veh_id - 1;
-                if (!requests[req_idx].isVehicleCompatible(vehicles[v_idx].category))
-                    continue;
+                // if (!requests[req_idx].isVehicleCompatible(vehicles[v_idx].category))
+                //     continue;
 
                 double current_route_cost = calculateRouteCost(route, vehicles[v_idx]);
 
@@ -289,8 +289,8 @@ bool Solver::insertRequestBest(Solution &sol, int req_idx, int forbidden_veh_id)
             continue; // Skip forbidden vehicle (for Elimination op)
 
         int veh_idx = veh_id - 1;
-        if (!requests[req_idx].isVehicleCompatible(vehicles[veh_idx].category))
-            continue;
+        // if (!requests[req_idx].isVehicleCompatible(vehicles[veh_idx].category))
+        //     continue;
 
         double current_route_cost = calculateRouteCost(route, vehicles[veh_idx]);
         long long old_penalty = getRoutePenalty(route, veh_idx);
@@ -527,8 +527,8 @@ bool Solver::operatorRelocate(Solution &sol, double threshold)
             continue;
         int tgt_idx = tgt_veh_id - 1;
         const Vehicle &v = vehicles[tgt_veh_id - 1];
-        if (!requests[req_idx].isVehicleCompatible(v.category))
-            continue;
+        // if (!requests[req_idx].isVehicleCompatible(v.category))
+        //     continue;
 
         double cost_old_tgt = calculateRouteCost(tgt_route, v);
         long long pen_old_tgt = getRoutePenalty(tgt_route, tgt_idx);
@@ -601,10 +601,10 @@ bool Solver::operatorExchange(Solution &sol, double threshold)
     int v1_idx = v1 - 1;
     int v2_idx = v2 - 1;
 
-    if (!requests[r1_idx].isVehicleCompatible(vehicles[v2 - 1].category))
-        return false;
-    if (!requests[r2_idx].isVehicleCompatible(vehicles[v1 - 1].category))
-        return false;
+    // if (!requests[r1_idx].isVehicleCompatible(vehicles[v2 - 1].category))
+    //     return false;
+    // if (!requests[r2_idx].isVehicleCompatible(vehicles[v1 - 1].category))
+    //     return false;
 
     double cost_v1_old = calculateRouteCost(sol.routes[v1], vehicles[v1_idx]);
     long long pen_v1_old = getRoutePenalty(sol.routes[v1], v1_idx);
@@ -810,24 +810,24 @@ bool Solver::operator2Opt(Solution &sol, double threshold)
 
     long long pen1_new, pen2_new;
 
-    auto compatibleRoute = [&](const std::vector<int> &r, int veh_idx)
-    {
-        for (int node : r)
-        {
-            if (graph.nodes[node].type == Node::PICKUP)
-            {
-                int req = graph.nodes[node].request_id;
-                if (!requests[req].isVehicleCompatible(vehicles[veh_idx].category))
-                    return false;
-            }
-        }
-        return true;
-    };
+    // auto compatibleRoute = [&](const std::vector<int> &r, int veh_idx)
+    // {
+    //     for (int node : r)
+    //     {
+    //         if (graph.nodes[node].type == Node::PICKUP)
+    //         {
+    //             int req = graph.nodes[node].request_id;
+    //             if (!requests[req].isVehicleCompatible(vehicles[veh_idx].category))
+    //                 return false;
+    //         }
+    //     }
+    //     return true;
+    // };
 
-    if (!compatibleRoute(new_r1, v1_id - 1))
-        return false;
-    if (!compatibleRoute(new_r2, v2_id - 1))
-        return false;
+    // if (!compatibleRoute(new_r1, v1_id - 1))
+    //     return false;
+    // if (!compatibleRoute(new_r2, v2_id - 1))
+    //     return false;
 
     if (!checker.runEightStepEvaluation(new_r1, idx1_v))
         return false;

@@ -40,6 +40,9 @@ bool FeasibilityChecker::runEightStepEvaluation(const std::vector<int> &route_id
     L[0] = nodes[start_node].demand;
 
     std::vector<int> active_requests;
+    
+    // NEW: Track sharing violations so we only penalize once per passenger
+    std::vector<bool> sharing_penalized(requests.size(), false);
 
     // Step 2: Forward Pass
     for (int i = 1; i < U; ++i)
@@ -89,8 +92,28 @@ bool FeasibilityChecker::runEightStepEvaluation(const std::vector<int> &route_id
         if (n_curr.type == Node::PICKUP)
         {
             const Request &r = requests[n_curr.request_id];
+            
+            // If it's not strictly compatible (e.g., Premium in Normal)
             if (!r.isVehicleCompatible(vehicle.category))
-                return false;
+            {
+                if (mode == EvaluationMode::STRICT) 
+                {
+                    return false;
+                } 
+                else if (mode == EvaluationMode::PENALTY) 
+                {
+                    // Downgrade: Premium passenger in a Normal car
+                    if (r.veh_pref == CATEGORY_PREMIUM && vehicle.category == CATEGORY_NORMAL)
+                    {
+                        total_penalty += penalty_premium_vehicle;
+                    }
+                    else
+                    {
+                        // Any other impossible mismatch fails completely
+                        return false;
+                    }
+                }
+            }
             active_requests.push_back(n_curr.request_id);
         }
         else if (n_curr.type == Node::DELIVERY)
@@ -106,9 +129,22 @@ bool FeasibilityChecker::runEightStepEvaluation(const std::vector<int> &route_id
         {
             const Request &r = requests[req_id];
             int max_passengers_allowed = 1 + r.max_shared_with;
+            
             if (current_real_load > max_passengers_allowed)
             {
-                return false;
+                if (mode == EvaluationMode::STRICT) 
+                {
+                    return false;
+                } 
+                else if (mode == EvaluationMode::PENALTY) 
+                {
+                    // Only apply the penalty if we haven't already penalized this specific request
+                    if (!sharing_penalized[req_id]) 
+                    {
+                        total_penalty += penalty_sharing_preference;
+                        sharing_penalized[req_id] = true;
+                    }
+                }
             }
         }
     }

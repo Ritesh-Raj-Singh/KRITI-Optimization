@@ -47,11 +47,16 @@ struct Request
         if (veh_pref == CATEGORY_ANY)
             return true;
 
+        // Normal Req: Can use Normal OR Premium (Free upgrade allowed)
         if (veh_pref == CATEGORY_NORMAL)
+<<<<<<< HEAD
             return v_cat == CATEGORY_NORMAL;
         // return true;
+=======
+            return (v_cat == CATEGORY_NORMAL || v_cat == CATEGORY_PREMIUM);
+>>>>>>> afae813 (..)
 
-        // If I asked for Premium, I strictly want Premium
+        // Premium Req: Strictly wants Premium
         if (veh_pref == CATEGORY_PREMIUM)
             return v_cat == CATEGORY_PREMIUM;
 

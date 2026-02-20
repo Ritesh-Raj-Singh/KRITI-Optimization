@@ -42,6 +42,10 @@ public:
 
     EvaluationMode mode;
     long long total_penalty;
+
+    // NEW: Separate penalty variables for easy tuning
+    long long penalty_premium_vehicle = 10000;
+    long long penalty_sharing_preference = 10000;
 };
 
 #endif
