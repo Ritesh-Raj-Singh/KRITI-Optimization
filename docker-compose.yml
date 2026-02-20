@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  solver-server:
+    # Build the image from the Dockerfile in the current directory
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    # Name the running container
+    container_name: solver-server
+
+    # Map host port 5555 to container port 5555
+    ports:
+      - "5555:5555"
+
+    # Set environment variables
+    environment:
+      - PORT=5555
+
+    # Restart policy — always restart unless manually stopped
+    restart: unless-stopped
+
+    # Mount a volume so the tmp/ folder (solver outputs) persists
+    # on your host machine even if the container restarts
+    volumes:
+      - ./tmp:/app/tmp
+
+    # Health check — hits the server every 30s to confirm it's alive
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5555/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
