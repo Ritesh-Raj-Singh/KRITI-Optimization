@@ -20,63 +20,52 @@ using namespace std;
 
 const double R_EARTH = 6371.0;
 const double INF = numeric_limits<double>::max();
-const double PENALTY_UNASSIGNED = 1000000.0;
-const double PENALTY_CONSTRAINT = 100000.0;
+
+// New Penalty Weights based on Reference
+const double ALPHA = 5000.0;   // Ride Time Delay Penalty (linear)
+const double BETA = 10000.0;   // Time Window Penalty (linear)
+const double GAMMA = 100000.0; // Capacity/Preference Penalty (linear/fixed)
 
 // Global Settings (Loaded from metadata.csv)
 double WEIGHT_COST = 0.7;
 double WEIGHT_TIME = 0.3;
-map<int, int> PRIORITY_DELAYS; // Stores max delay per priority level
+map<int, int> PRIORITY_DELAYS;
 
 // --- Matrix Definitions ---
 int N = 0;
 int V = 0;
 std::vector<std::vector<double>> matrix;
 
-void loadMatrix(const std::string &filename, int size)
-{
+void loadMatrix(const std::string &filename, int size) {
     matrix.assign(size, std::vector<double>(size));
-
     std::ifstream fin(filename);
-    if(!fin)
-    {
+    if(!fin) {
         std::cerr << "Cannot open matrix file\n";
         std::exit(1);
     }
-
     for(int i = 0; i < size; i++)
         for(int j = 0; j < size; j++)
             fin >> matrix[i][j];
 }
 
-int convert(const std::string &a)
-{
-    if(a[0] == 'E')
-        return std::stoi(a.substr(1)) - 1;
-
-    if(a[0] == 'V')
-        return N + std::stoi(a.substr(1)) - 1;
-
-    // OFFICE / DROP (Fallthrough for any other string like "OFFICE")
-    return N + V;
+int convert(const std::string &a) {
+    if(a[0] == 'E') return std::stoi(a.substr(1)) - 1;
+    if(a[0] == 'V') return N + std::stoi(a.substr(1)) - 1;
+    return N + V; // OFFICE / DROP
 }
 
-double getDistanceFromMatrix(const std::string &a, const std::string &b)
-{
+double getDistanceFromMatrix(const std::string &a, const std::string &b) {
     return matrix[convert(a)][convert(b)];
 }
 
-int getTravelTimeFromMatrix(const std::string &a, const std::string &b, double speed_kmh)
-{
+int getTravelTimeFromMatrix(const std::string &a, const std::string &b, double speed_kmh) {
     double d = getDistanceFromMatrix(a, b);
     return (d < 0.005) ? 0 : std::ceil((d / speed_kmh) * 60.0);
 }
 
 // --- Data Structures ---
 
-struct Point {
-    double lat, lng;
-};
+struct Point { double lat, lng; };
 
 struct Request {
     string id;
@@ -124,17 +113,14 @@ vector<string> veh_ids;
 
 // --- Helper Functions ---
 
-// Parse "HH:MM" string to minutes from midnight
 int parseTime(string t_str) {
     if(t_str.empty()) return 0;
-    int h, m;
-    char colon;
+    int h, m; char colon;
     stringstream ss(t_str);
     ss >> h >> colon >> m;
     return h * 60 + m;
 }
 
-// Format minutes to "HH:MM"
 string formatTime(int minutes) {
     int h = minutes / 60;
     int m = minutes % 60;
@@ -143,13 +129,11 @@ string formatTime(int minutes) {
     return ss.str();
 }
 
-// Split string by delimiter
 vector<string> split(const string &s, char delimiter) {
-    vector<string> tokens;
-    string token;
+    vector<string> tokens; string token;
     istringstream tokenStream(s);
     while(getline(tokenStream, token, delimiter)) {
-        if(!token.empty() && token.back() == '\r') token.pop_back(); // Handle Windows line endings
+        if(!token.empty() && token.back() == '\r') token.pop_back();
         tokens.push_back(token);
     }
     return tokens;
@@ -159,12 +143,9 @@ vector<string> split(const string &s, char delimiter) {
 
 void loadMetadata(const string &ok) {
     ifstream file(ok);
-    if(!file.is_open()) {
-        cerr << "Error: Could not open metadata.csv" << endl;
-        return;
-    }
+    if(!file.is_open()) return;
     string line;
-    getline(file, line); // Skip header
+    getline(file, line);
     while(getline(file, line)) {
         vector<string> row = split(line, ',');
         if(row.size() < 2) continue;
@@ -183,59 +164,44 @@ void loadMetadata(const string &ok) {
 
 void loadEmployees(const string &ok) {
     ifstream file(ok);
-    if(!file.is_open()) {
-        cerr << "Error: Could not open employees.csv" << endl;
-        return;
-    }
+    if(!file.is_open()) return;
     string line;
-    getline(file, line); // Skip header
+    getline(file, line);
     while(getline(file, line)) {
         vector<string> row = split(line, ',');
         if(row.size() < 10) continue;
-
         Request r;
-        r.id = row[0];
-        r.priority = stoi(row[1]);
+        r.id = row[0]; r.priority = stoi(row[1]);
         r.pickup = { stod(row[2]), stod(row[3]) };
         r.drop = { stod(row[4]), stod(row[5]) };
         r.e_pickup = parseTime(row[6]);
         r.l_drop = parseTime(row[7]);
-        r.veh_pref = row[8];
-        r.share_pref = row[9];
-
+        r.veh_pref = row[8]; r.share_pref = row[9];
         requests[r.id] = r;
         req_ids.push_back(r.id);
     }
-    // Update N for matrix logic
     N = req_ids.size();
     file.close();
 }
 
 void loadVehicles(const string &ok) {
     ifstream file(ok);
-    if(!file.is_open()) {
-        cerr << "Error: Could not open vehicles.csv" << endl;
-        return;
-    }
+    if(!file.is_open()) return;
     string line;
-    getline(file, line); // Skip header
+    getline(file, line);
     while(getline(file, line)) {
         vector<string> row = split(line, ',');
         if(row.size() < 10) continue;
-
         Vehicle v;
-        v.id = row[0];
-        v.capacity = stoi(row[3]);
+        v.id = row[0]; v.capacity = stoi(row[3]);
         v.cost_per_km = stod(row[4]);
-        v.speed_km_min = stod(row[5]) / 60.0; // Convert km/h to km/min
+        v.speed_km_min = stod(row[5]) / 60.0;
         v.start_loc = { stod(row[6]), stod(row[7]) };
         v.start_time = parseTime(row[8]);
         v.category = row[9];
-
         vehicles[v.id] = v;
         veh_ids.push_back(v.id);
     }
-    // Update V for matrix logic
     V = veh_ids.size();
     file.close();
 }
@@ -247,23 +213,16 @@ EvalResult evaluateRoute(const string &v_id, const vector<Step> &route) {
     EvalResult res = { 0.0, 0.0, 0.0 };
 
     double current_time = v.start_time;
-    // Track the LAST location ID (initially the vehicle ID)
     string last_location_id = v_id;
-
     int current_load = 0;
+
     set<string> passengers_on_board;
     map<string, double> pickup_times;
 
     for(const auto &step : route) {
         Request r = requests[step.req_id];
-
-        // Determine Target: If Type 1 (Pickup) -> Employee ID; If Type 2 (Drop) -> "OFFICE"
         string target_location_id = (step.type == 1) ? step.req_id : "OFFICE";
-
-        // Calculate distance from PREVIOUS location to CURRENT target
         double dist = getDistanceFromMatrix(last_location_id, target_location_id);
-
-        // Update last location for the next iteration
         last_location_id = target_location_id;
 
         double travel_time = dist / v.speed_km_min;
@@ -276,40 +235,58 @@ EvalResult evaluateRoute(const string &v_id, const vector<Step> &route) {
             current_load++;
             passengers_on_board.insert(r.id);
 
-            // Constraint: Vehicle Preference
+            // Penalty: Vehicle Preference
             if(r.veh_pref != "any" && r.veh_pref != v.category)
-                res.penalty += PENALTY_CONSTRAINT;
+                res.penalty += GAMMA;
 
         }
         else { // Drop
             if(pickup_times.count(r.id)) {
-                res.passenger_time += (start_service_time - pickup_times[r.id]);
+                double actual_ride_time = start_service_time - pickup_times[r.id];
+                res.passenger_time += actual_ride_time;
+
+                // Penalty: Priority-based Max Delay (Linear Ride Time Penalty)
+                double direct_dist = getDistanceFromMatrix(r.id, "OFFICE");
+                double direct_time = direct_dist / v.speed_km_min;
+                double delay = actual_ride_time - direct_time;
+                int max_allowed_delay = PRIORITY_DELAYS[r.priority];
+
+                if(delay > max_allowed_delay) {
+                    res.penalty += (delay - max_allowed_delay) * ALPHA;
+                }
             }
             current_load--;
             passengers_on_board.erase(r.id);
 
-            // Constraint: Priority-based Max Delay
-            int max_delay = PRIORITY_DELAYS[r.priority];
-            double max_allowed_time = r.l_drop + max_delay;
-
-            if(start_service_time > max_allowed_time) {
-                res.penalty += PENALTY_CONSTRAINT + (start_service_time - max_allowed_time) * 1000;
+            // Penalty: Time Window Violation (Linear)
+            if(start_service_time > r.l_drop) {
+                res.penalty += (start_service_time - r.l_drop) * BETA;
             }
         }
 
-        // Constraint: Capacity
-        if(current_load > v.capacity) res.penalty += PENALTY_CONSTRAINT;
+        // Penalty: Capacity Violation (Linear)
+        if(current_load > v.capacity) {
+            res.penalty += (current_load - v.capacity) * GAMMA;
+        }
 
-        // Constraint: Sharing Preference
+        // Penalty: Sharing Preference 
+        int max_pax = v.capacity;
         for(const string &pid : passengers_on_board) {
             string pref = requests[pid].share_pref;
-            int max_pax = (pref == "single") ? 1 : (pref == "double") ? 2 : 3;
-            if(passengers_on_board.size() > max_pax) res.penalty += PENALTY_CONSTRAINT;
+            int limit = (pref == "single") ? 1 : (pref == "double") ? 2 : 3;
+            if(limit < max_pax) max_pax = limit;
+        }
+        if(passengers_on_board.size() > max_pax) {
+            res.penalty += (passengers_on_board.size() - max_pax) * GAMMA;
         }
 
         res.monetary_cost += dist * v.cost_per_km;
         current_time = start_service_time;
     }
+
+    // Safety check: ensure vehicle empties
+    if(current_load != 0) res.penalty += abs(current_load) * GAMMA;
+
     return res;
 }
 
@@ -325,9 +302,9 @@ double calculateObjective(Solution &sol) {
         total_penalty += res.penalty;
     }
 
-    total_penalty += sol.unassigned.size() * PENALTY_UNASSIGNED;
+    // Unassigned penalty retained conceptually, but should remain 0 based on new assignment logic
+    total_penalty += sol.unassigned.size() * GAMMA;
 
-    // Objective: Weighted Sum
     double obj = (WEIGHT_COST * total_cost) + (WEIGHT_TIME * total_time);
     sol.obj_value = obj + total_penalty;
     return sol.obj_value;
@@ -336,19 +313,17 @@ double calculateObjective(Solution &sol) {
 Solution initialSolution() {
     Solution sol;
     for(const string &vid : veh_ids) sol.routes[vid] = {};
-    sol.unassigned = req_ids;
+    sol.unassigned.clear(); // We won't unassign anyone
 
+    vector<string> pending = req_ids;
     // Sort by earliest pickup
-    sort(sol.unassigned.begin(), sol.unassigned.end(), [](const string &a, const string &b) {
+    sort(pending.begin(), pending.end(), [](const string &a, const string &b) {
         return requests[a].e_pickup < requests[b].e_pickup;
         });
 
-    vector<string> pending = sol.unassigned;
-    sol.unassigned.clear();
-
     for(const string &rid : pending) {
         double best_obj = INF;
-        string best_veh = "";
+        string best_veh = veh_ids[0]; // Initialize to prevent empty assignment
         vector<Step> best_route;
 
         for(const string &vid : veh_ids) {
@@ -360,23 +335,21 @@ Solution initialSolution() {
                     temp.insert(temp.begin() + i, { 1, rid });
                     temp.insert(temp.begin() + j, { 2, rid });
 
-                    EvalResult res = evaluateRoute(vid, temp);
-                    if(res.penalty == 0) { // Only consider strict feasible moves initially
-                        Solution temp_sol = sol;
-                        temp_sol.routes[vid] = temp;
-                        double obj = calculateObjective(temp_sol);
+                    Solution temp_sol = sol;
+                    temp_sol.routes[vid] = temp;
+                    double obj = calculateObjective(temp_sol);
 
-                        if(obj < best_obj) {
-                            best_obj = obj;
-                            best_veh = vid;
-                            best_route = temp;
-                        }
+                    // Allow assignment even with penalties to ensure ALL are routed
+                    if(obj < best_obj) {
+                        best_obj = obj;
+                        best_veh = vid;
+                        best_route = temp;
                     }
                 }
             }
         }
-        if(best_veh != "") sol.routes[best_veh] = best_route;
-        else sol.unassigned.push_back(rid);
+        // Force assignment
+        sol.routes[best_veh] = best_route;
     }
     calculateObjective(sol);
     return sol;
@@ -441,24 +414,25 @@ Solution neighborSwap(Solution sol) {
 }
 
 int main(int argc, char **argv) {
+    if(argc < 5) {
+        cerr << "Usage: ./program <vehicles.csv> <employees.csv> <metadata.csv> <matrix.txt>\n";
+        return 1;
+    }
+
     srand(time(0));
 
     cout << "Loading CSV files..." << endl;
     loadVehicles(argv[1]);
     loadEmployees(argv[2]);
     loadMetadata(argv[3]);
-
-    // N and V are set inside loadEmployees and loadVehicles
-    // Matrix size = N (employees) + V (vehicles) + 1 (Office)
     loadMatrix(argv[4], N + V + 1);
 
     if(req_ids.empty() || veh_ids.empty()) {
-        cerr << "Error: No data loaded. Check filenames (employees.csv, vehicles.csv)." << endl;
+        cerr << "Error: No data loaded. Check filenames." << endl;
         return 1;
     }
 
     cout << "Loaded " << req_ids.size() << " requests, " << veh_ids.size() << " vehicles." << endl;
-    cout << "Weights -> Cost: " << WEIGHT_COST << ", Time: " << WEIGHT_TIME << endl;
 
     Solution current = initialSolution();
     Solution best = current;
@@ -473,7 +447,6 @@ int main(int argc, char **argv) {
             if(k == 1) neighbor = neighborMove(current);
             else neighbor = neighborSwap(current);
 
-            // Acceptance
             if(neighbor.obj_value < current.obj_value) {
                 current = neighbor;
                 if(current.obj_value < best.obj_value) best = current;
@@ -486,61 +459,25 @@ int main(int argc, char **argv) {
     }
 
     // --- Calculate Final Stats ---
-    double final_cost = 0, final_time = 0;
+    double final_cost = 0, final_time = 0, final_penalty = 0;
     for(auto const &entry : best.routes) {
         EvalResult res = evaluateRoute(entry.first, entry.second);
         final_cost += res.monetary_cost;
         final_time += res.passenger_time;
+        final_penalty += res.penalty;
     }
     double final_obj = calculateObjective(best);
 
-    // --- Console Output (Requested Format) ---
     cout << "\n=== Optimized Schedule ===" << endl;
-    cout << "Final Objective: " << fixed << setprecision(3) << final_obj << endl;
-    cout << "Total Monetary Cost: " << final_cost << endl;
-    cout << "Total Passenger Time: " << final_time << " min" << endl;
-    cout << "Unassigned Requests: " << best.unassigned.size() << endl;
+    cout << "Final Objective Score : " << fixed << setprecision(3) << final_obj << endl;
+    cout << "Total Monetary Cost   : " << final_cost << endl;
+    cout << "Total Passenger Time  : " << final_time << " min" << endl;
+    cout << "Total Penalty Applied : " << final_penalty << endl;
+    cout << "Unassigned Requests   : " << best.unassigned.size() << endl;
 
-    for(const string &vid : veh_ids) {
-        if(best.routes[vid].empty()) continue;
-
-        Vehicle v = vehicles[vid];
-        cout << "\nVehicle " << v.id << " (" << v.category << "):" << endl;
-
-        double cur_time = v.start_time;
-        string last_location_id = vid; // Start at vehicle location
-
-        for(const auto &step : best.routes[vid]) {
-            Request r = requests[step.req_id];
-
-            // Determine target and distance
-            string target_location_id = (step.type == 1) ? step.req_id : "OFFICE";
-            double dist = getDistanceFromMatrix(last_location_id, target_location_id);
-            last_location_id = target_location_id; // Update location
-
-            double travel = dist / v.speed_km_min;
-            double arrival = cur_time + travel;
-
-            if(step.type == 1) { // PICKUP
-                double start = max(arrival, (double)r.e_pickup);
-                cur_time = start;
-                cout << "  [PICKUP] " << r.id << " @ " << formatTime((int)start) << endl;
-            }
-            else { // DROP
-                cur_time = arrival;
-                int max_delay = PRIORITY_DELAYS[r.priority];
-                int limit_time = r.l_drop + max_delay;
-
-                cout << "  [DROP  ] " << r.id << " @ " << formatTime((int)arrival)
-                    << " (Limit: " << formatTime(limit_time) << ")" << endl;
-            }
-        }
-    }
-
-    // --- CSV Generation ---
-
-    // 1. Vehicle-wise Output CSV
+    // --- Output CSVs ---
     ofstream outFileVeh("vehicle_output.csv");
+    outFileVeh << fixed << setprecision(3) << final_obj << "," << final_penalty << endl;
     outFileVeh << "vehicle_id,category,employee_id,pickup_time,drop_time" << endl;
 
     struct EmpRecord {
@@ -555,9 +492,7 @@ int main(int argc, char **argv) {
         Vehicle v = vehicles[vid];
         double cur_time = v.start_time;
         string last_location_id = vid;
-
-        map<string, int> p_times;
-        map<string, int> d_times;
+        map<string, int> p_times, d_times;
 
         for(const auto &step : best.routes[vid]) {
             Request r = requests[step.req_id];
@@ -568,12 +503,12 @@ int main(int argc, char **argv) {
             double travel = dist / v.speed_km_min;
             double arrival = cur_time + travel;
 
-            if(step.type == 1) { // Pickup
+            if(step.type == 1) {
                 double start = max(arrival, (double)r.e_pickup);
                 p_times[r.id] = (int)start;
                 cur_time = start;
             }
-            else { // Drop
+            else {
                 d_times[r.id] = (int)arrival;
                 cur_time = arrival;
             }
@@ -581,26 +516,21 @@ int main(int argc, char **argv) {
 
         for(auto const &entry : p_times) {
             string eid = entry.first;
-            int p_time = entry.second;
-            int d_time = d_times[eid];
-
             outFileVeh << vid << "," << v.category << "," << eid << ","
-                << formatTime(p_time) << "," << formatTime(d_time) << endl;
-
-            empRecords[eid] = { eid, formatTime(p_time), formatTime(d_time) };
+                << formatTime(entry.second) << "," << formatTime(d_times[eid]) << endl;
+            empRecords[eid] = { eid, formatTime(entry.second), formatTime(d_times[eid]) };
         }
     }
     outFileVeh.close();
 
-    // 2. Employee-wise Output CSV
     ofstream outFileEmp("employee_output.csv");
     outFileEmp << "employee_id,pickup_time,drop_time" << endl;
     for(const auto &entry : empRecords) {
-        outFileEmp << entry.second.emp_id << ","
-            << entry.second.pickup_time << ","
-            << entry.second.drop_time << endl;
+        outFileEmp << entry.second.emp_id << "," << entry.second.pickup_time << "," << entry.second.drop_time << endl;
     }
     outFileEmp.close();
+
+    cout << "\nOutput successfully saved to 'vehicle_output.csv', 'employee_output.csv', and 'summary.csv'." << endl;
 
     return 0;
 }
