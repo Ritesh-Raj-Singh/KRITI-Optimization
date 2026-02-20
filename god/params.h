@@ -7,7 +7,7 @@ namespace Params
     // Higher values make the solver treat violations as more costly → fewer feasibility violations
     // in output, but may cause the VNS to accept worse monetary cost solutions to stay feasible.
     inline constexpr double ALPHA = 1.0;    // Ride-time violation: low keeps max-ride-time soft
-    inline constexpr double BETA = 5.0;     // Time-window violation: soft-medium enforcement
+    inline constexpr double BETA = 500.0;   // Time-window violation: soft-medium enforcement
                                             // (viol_tw units = min×priority, typically 50–500 total;
                                             //  100 units × 5 = 500 ≈ 29% of f1=1750 → explorable but penalized)
     inline constexpr double GAMMA = 1000.0; // Capacity violation: semi-hard enforcement
