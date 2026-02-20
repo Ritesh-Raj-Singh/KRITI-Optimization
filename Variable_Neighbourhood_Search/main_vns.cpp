@@ -530,7 +530,7 @@ int main(int argc, char **argv) {
     }
     outFileEmp.close();
 
-    cout << "\nOutput successfully saved to 'vehicle_output.csv', 'employee_output.csv', and 'summary.csv'." << endl;
+    cout << "\nOutput successfully saved to 'vehicle_output.csv' and 'employee_output.csv'." << endl;
 
     return 0;
 }
