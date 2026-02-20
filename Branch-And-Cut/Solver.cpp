@@ -1,5 +1,6 @@
 #include "Solver.h"
 #include "utils.h"
+#include "globals.h"
 #include <limits>
 #include <algorithm>
 #include <random>
@@ -475,6 +476,21 @@ Solver::Solution Solver::solveDeterministicAnnealing()
         }
     }
 
+    for (auto const &[vid, route] : best_sol.routes)
+    {
+        int v_idx = vid - 1;
+        double pc = calculateRouteCost(route, vehicles[v_idx]);
+        costt += pc;
+
+        if (checker.runEightStepEvaluation(route, v_idx))
+        {
+            pen += checker.getPenalty();
+        }
+        else
+        {
+            pen += 1e15;
+        }
+    }
     return best_sol;
 }
 

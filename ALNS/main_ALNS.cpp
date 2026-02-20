@@ -2,24 +2,22 @@
 #include "ALNS.h"
 #include "CostFunction.h"
 #include <iostream>
-#include <fstream>      
-#include "Feasibility.h" 
+#include <fstream>
+#include "Feasibility.h"
 
 #include "Distance.h"
-#include"mapper.h"
+#include "mapper.h"
 #include <iomanip>
-#include<chrono>
+#include <chrono>
 std::map<std::pair<double, double>, int> mappy;
 double path_len[251][251];
 
-
-bool checkBatchFits(const std::vector<int> &batch, int nextId, const Vehicle &v, const std::vector<Employee> &emp, double currentT, double currentX, double currentY,const Metadata& meta)
+bool checkBatchFits(const std::vector<int> &batch, int nextId, const Vehicle &v, const std::vector<Employee> &emp, double currentT, double currentX, double currentY, const Metadata &meta)
 {
-    
+
     if (batch.size() + 1 > v.seatCap)
         return false;
 
-    
     const auto &nextE = emp[nextId];
     int newSize = batch.size() + 1;
     if (nextE.sharePref < newSize)
@@ -27,7 +25,6 @@ bool checkBatchFits(const std::vector<int> &batch, int nextId, const Vehicle &v,
     for (int pid : batch)
         if (emp[pid].sharePref < newSize)
             return false;
-
 
     double dKm = distKm(currentX, currentY, nextE.x, nextE.y);
     double travelMin = (dKm / v.speed) * 60.0;
@@ -39,24 +36,22 @@ bool checkBatchFits(const std::vector<int> &batch, int nextId, const Vehicle &v,
     double timeToDest = (dDestKm / v.speed) * 60.0;
     double arrivalAtDest = depart + timeToDest;
 
-    if (arrivalAtDest > nextE.due + getMaxLateness(nextE.priority,meta))
+    if (arrivalAtDest > nextE.due + getMaxLateness(nextE.priority, meta))
         return false;
-
 
     for (int bid : batch)
     {
-        if (arrivalAtDest > emp[bid].due + getMaxLateness(emp[bid].priority,meta))
+        if (arrivalAtDest > emp[bid].due + getMaxLateness(emp[bid].priority, meta))
             return false;
     }
 
- 
     if (arrivalAtDest > v.endTime)
         return false;
 
     return true;
 }
 
-void printRouteTrace(const Route &r, const Vehicle &v, const std::vector<Employee> &emp, double &outDist, double &outDuration, const Metadata& meta)
+void printRouteTrace(const Route &r, const Vehicle &v, const std::vector<Employee> &emp, double &outDist, double &outDuration, const Metadata &meta)
 {
     outDist = 0;
     outDuration = 0;
@@ -72,20 +67,19 @@ void printRouteTrace(const Route &r, const Vehicle &v, const std::vector<Employe
     {
         if (batch.empty())
             return;
-   
+
         const auto &last = emp[batch.back()];
         double dOff = distKm(currX, currY, last.destX, last.destY);
         double tOff = (dOff / v.speed) * 60.0;
         currT += tOff;
-        outDuration += tOff*batch.size();
+        outDuration += tOff * batch.size();
         totalDist += dOff;
 
-      
         for (int id : batch)
         {
             std::cout << emp[id].originalId << "(drop) -> ";
         }
-        currT += 0; 
+        currT += 0;
 
         currX = last.destX;
         currY = last.destY;
@@ -94,32 +88,31 @@ void printRouteTrace(const Route &r, const Vehicle &v, const std::vector<Employe
 
     for (int eId : r.seq)
     {
-     
-        if (!checkBatchFits(batch, eId, v, emp, t, cx, cy,meta))
+
+        if (!checkBatchFits(batch, eId, v, emp, t, cx, cy, meta))
         {
-         
+
             dropBatch(t, cx, cy);
 
-            
             double dToE = distKm(cx, cy, emp[eId].x, emp[eId].y);
             t += (dToE / v.speed) * 60.0;
-            outDuration += batch.size()*((dToE / v.speed) * 60.0);
+            outDuration += batch.size() * ((dToE / v.speed) * 60.0);
             totalDist += dToE;
         }
         else
         {
-           
+
             double d = distKm(cx, cy, emp[eId].x, emp[eId].y);
             t += (d / v.speed) * 60.0;
-            outDuration += batch.size()*((d / v.speed) * 60.0);
-            totalDist += d; 
+            outDuration += batch.size() * ((d / v.speed) * 60.0);
+            totalDist += d;
         }
 
-       
         std::cout << emp[eId].originalId << "(pickup) -> ";
 
-        if(t<emp[eId].ready){
-            outDuration+=(emp[eId].ready-t)*batch.size();
+        if (t < emp[eId].ready)
+        {
+            outDuration += (emp[eId].ready - t) * batch.size();
         }
         double startService = std::max(t, emp[eId].ready);
         t = startService;
@@ -128,7 +121,6 @@ void printRouteTrace(const Route &r, const Vehicle &v, const std::vector<Employe
         batch.push_back(eId);
     }
 
-   
     if (!batch.empty())
     {
         dropBatch(t, cx, cy);
@@ -137,9 +129,7 @@ void printRouteTrace(const Route &r, const Vehicle &v, const std::vector<Employe
     std::cout << "End";
 
     outDist = totalDist;
-    
 }
-
 
 std::string formatTime(double mins)
 {
@@ -151,14 +141,10 @@ std::string formatTime(double mins)
     return oss.str();
 }
 
-
-
-void generateOutputFiles(const std::vector<Route> &solution, const std::vector<Vehicle> &vehicles, const std::vector<Employee> &emp,const Metadata& meta, std::string dir)
+void generateOutputFiles(const std::vector<Route> &solution, const std::vector<Vehicle> &vehicles, const std::vector<Employee> &emp, const Metadata &meta, std::string dir)
 {
     std::string vPath = dir + "/ALNS/output_vehicle.csv";
     std::string ePath = dir + "/ALNS/output_employees.csv";
-
-
 
     std::ofstream vFile(vPath);
     std::ofstream eFile(ePath);
@@ -168,8 +154,10 @@ void generateOutputFiles(const std::vector<Route> &solution, const std::vector<V
     double totalOpCost = 0.0;
     double totalPenalty = 0.0;
 
-    for (const Route &r : solution) {
-        if (r.seq.empty()) continue;
+    for (const Route &r : solution)
+    {
+        if (r.seq.empty())
+            continue;
         CostComponents cc = getRouteCostComponents(r, vehicles[r.vehicleId], emp, meta);
         totalOpCost += cc.operationalCost;
         totalPenalty += cc.penaltyCost;
@@ -204,21 +192,18 @@ void generateOutputFiles(const std::vector<Route> &solution, const std::vector<V
             double tOff = (dOff / v.speed) * 60.0;
 
             double arrival = currT + tOff;
-            std::string dropTimeStr = formatTime(arrival); 
+            std::string dropTimeStr = formatTime(arrival);
 
-            currT = arrival; 
+            currT = arrival;
 
-    
             for (auto &item : batch)
             {
                 int eId = item.first;
                 std::string pickTimeStr = item.second;
                 std::string origId = emp[eId].originalId;
 
-              
                 vFile << v.originalId << "," << cat << "," << origId << "," << pickTimeStr << "," << dropTimeStr << "\n";
 
-             
                 eFile << origId << "," << pickTimeStr << "," << dropTimeStr << "\n";
             }
 
@@ -229,7 +214,7 @@ void generateOutputFiles(const std::vector<Route> &solution, const std::vector<V
 
         for (int eId : r.seq)
         {
-            
+
             bool fits = true;
             if (batch.size() + 1 > v.seatCap)
                 fits = false;
@@ -244,25 +229,21 @@ void generateOutputFiles(const std::vector<Route> &solution, const std::vector<V
                 }
             }
 
-         
             std::vector<int> currentBatchIds;
             for (auto &p : batch)
                 currentBatchIds.push_back(p.first);
 
-         
-
-            if (!checkBatchFits(currentBatchIds, eId, v, emp, t, cx, cy,meta))
+            if (!checkBatchFits(currentBatchIds, eId, v, emp, t, cx, cy, meta))
             {
-                
+
                 processBatch(t, cx, cy);
 
-              
                 double d = distKm(cx, cy, emp[eId].x, emp[eId].y);
                 t += (d / v.speed) * 60.0;
             }
             else
             {
-              
+
                 double d = distKm(cx, cy, emp[eId].x, emp[eId].y);
                 t += (d / v.speed) * 60.0;
             }
@@ -288,11 +269,10 @@ void generateOutputFiles(const std::vector<Route> &solution, const std::vector<V
     std::cout << "Generated output_vehicle.csv and output_employees.csv\n";
 }
 
-
 int main(int argc, char **argv)
 {
 
-    auto start = std::chrono::high_resolution_clock::now(); 
+    auto start = std::chrono::high_resolution_clock::now();
 
     if (argc < 2)
     {
@@ -303,9 +283,10 @@ int main(int argc, char **argv)
     auto vehicles = readVehicles(argv[1] + std::string("/vehicles.csv"));
     auto employees = readEmployees(argv[1] + std::string("/employees.csv"));
 
-     if (vehicles.empty()) {
+    if (vehicles.empty())
+    {
         std::cerr << "Error: No vehicles loaded from " << argv[1] << "/vehicles.csv\n";
-    }           
+    }
 
     if (vehicles.empty() || employees.empty())
     {
@@ -315,21 +296,25 @@ int main(int argc, char **argv)
 
     Metadata meta;
 
-    if(argc >= 2 )  meta = readMetadata(argv[1] + std::string("/metadata.csv"));
-    else {
+    if (argc >= 2)
+        meta = readMetadata(argv[1] + std::string("/metadata.csv"));
+    else
+    {
         std::cerr << "Warning: No metadata provided. Using default values.\n";
         meta.objectiveCostWeight = 1.0;
         meta.objectiveTimeWeight = 1.0;
     }
-    readDist(argv[1] + std::string("/matrix.txt"),(int)(employees.size()+vehicles.size())+1);
-    int idx=0;
-    for(int i=0;i<employees.size();i++){
-        mappy[{employees[i].x,employees[i].y}]=idx++;
+    readDist(argv[1] + std::string("/matrix.txt"), (int)(employees.size() + vehicles.size()) + 1);
+    int idx = 0;
+    for (int i = 0; i < employees.size(); i++)
+    {
+        mappy[{employees[i].x, employees[i].y}] = idx++;
     }
-       for(int i=0;i<vehicles.size();i++){
-        mappy[{vehicles[i].x,vehicles[i].y}]=idx++;
+    for (int i = 0; i < vehicles.size(); i++)
+    {
+        mappy[{vehicles[i].x, vehicles[i].y}] = idx++;
     }
-    mappy[{employees[0].destX,employees[0].destY}]=idx;
+    mappy[{employees[0].destX, employees[0].destY}] = idx;
 
     auto solution = solveALNS(employees, vehicles, meta);
 
@@ -349,13 +334,13 @@ int main(int argc, char **argv)
         }
 
         double d = 0, time = 0;
-        printRouteTrace(r, vehicles[r.vehicleId], employees, d, time,meta);
+        printRouteTrace(r, vehicles[r.vehicleId], employees, d, time, meta);
 
         globalDist += d;
         globalTime += time;
         globalMoneyCost += d * vehicles[r.vehicleId].costPerKm;
 
-        std::cout << " [Debug: Dist=" << d << " km, CostPerKm=" << vehicles[r.vehicleId].costPerKm 
+        std::cout << " [Debug: Dist=" << d << " km, CostPerKm=" << vehicles[r.vehicleId].costPerKm
                   << ", RouteCost=" << d * vehicles[r.vehicleId].costPerKm << "]";
 
         std::cout << "\n";
@@ -368,17 +353,19 @@ int main(int argc, char **argv)
     std::cout << "Total Travel Cost (Money): " << globalMoneyCost << "\n";
     std::cout << "Total Time (min): " << globalTime << "\n";
 
-   
     double objective = globalMoneyCost * meta.objectiveCostWeight + globalTime * meta.objectiveTimeWeight;
     std::cout << "Custom Objective (w1*Money + w2*Time): " << objective << "\n";
 
-    generateOutputFiles(solution, vehicles, employees,meta, argv[1]);
+    generateOutputFiles(solution, vehicles, employees, meta, argv[1]);
     auto stop = std::chrono::high_resolution_clock::now();
 
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
     std::cout << "Time taken: " << duration.count() << " ms" << std::endl;
 }
+<<<<<<< HEAD
     
 
 
 
+=======
+>>>>>>> 5a2ab1f (fixed some errors)

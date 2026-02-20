@@ -2,3 +2,5 @@
 
 int N;
 int V;
+double pen;
+double costt;

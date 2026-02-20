@@ -304,6 +304,7 @@ void printSolution(const Solver::Solution &sol,
     {
         fs::path veh_out_path = base_dir / "Branch-And-Cut/output_vehicle.csv";
         std::ofstream fout(veh_out_path);
+        fout << costt << "," << pen + costt << "\n";
         fout << "vehicle_id,category,employee_id,pickup_time,drop_time\n";
         for (auto &r : vehicle_csv_rows)
             fout << r.vehicle_id << "," << r.category << "," << r.employee_id << "," << r.pickup_time << "," << r.drop_time << "\n";

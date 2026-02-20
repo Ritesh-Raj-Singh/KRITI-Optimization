@@ -3,5 +3,7 @@
 
 extern int N;
 extern int V;
+extern double pen;
+extern double costt;
 
 #endif

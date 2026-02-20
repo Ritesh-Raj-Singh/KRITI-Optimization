@@ -25,9 +25,9 @@ const double R_EARTH = 6371.0;
 const double INF = numeric_limits<double>::max();
 
 // New Penalty Weights based on Reference
-const double ALPHA = 500000.0; // Ride Time Delay Penalty (linear)
-const double BETA = 100000.0;  // Time Window Penalty (linear)
-const double GAMMA = 500000.0; // Capacity/Preference Penalty (linear/fixed)
+const double ALPHA = 5000.0;   // Ride Time Delay Penalty (linear)
+const double BETA = 10000.0;   // Time Window Penalty (linear)
+const double GAMMA = 100000.0; // Capacity/Preference Penalty (linear/fixed)
 
 // Global Settings (Loaded from metadata.csv)
 double WEIGHT_COST = 0.7;
@@ -492,18 +492,11 @@ Solution neighborSwap(Solution sol)
     return sol;
 }
 
-<<<<<<< HEAD
-int main(int argc, char **argv) {
-    if(argc < 2)
-    {
-        std::cerr << "Usage: " << argv[0] << " <base_directory>\n";
-=======
 int main(int argc, char **argv)
 {
-    if (argc < 5)
+    if (argc < 2)
     {
-        cerr << "Usage: ./program <vehicles.csv> <employees.csv> <metadata.csv> <matrix.txt>\n";
->>>>>>> 82bd63b (fixed some errors)
+        std::cerr << "Usage: " << argv[0] << " <base_directory>\n";
         return 1;
     }
 
@@ -511,7 +504,7 @@ int main(int argc, char **argv)
 
     fs::path base_dir = argv[1];
 
-    if(!fs::exists(base_dir))
+    if (!fs::exists(base_dir))
     {
         std::cerr << "Error: Directory does not exist: " << base_dir << "\n";
         return 1;
