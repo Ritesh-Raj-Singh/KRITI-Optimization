@@ -80,8 +80,8 @@ struct Config
     double cost_weight = 1.0;
     double time_weight = 0.0;
 
-    double alpha = 100000.0;   // Ride Time Penalty
-    double beta = 1000.0;   // Time Window Penalty
+    double alpha = 25000.0;;   // Ride Time Penalty
+    double beta = 100000.0;   // Time Window Penalty
     double gamma = 500000.0; // Capacity/Sharing Penalty
 
     std::vector<int> max_delays = {0, 10, 20, 30, 45, 60}; 
@@ -476,7 +476,7 @@ public:
             if (!m.feasible)
                 all_routes_feasible = false;
         }
-        score += unassigned_requests.size() * 100000000.0;
+        score += unassigned_requests.size() * 5000000.0;
         total_score = score;
         feasible = all_routes_feasible && unassigned_requests.empty();
     }
@@ -544,7 +544,7 @@ public:
                 cur.sequence = temp;
                 RouteMetrics m = cur.evaluate(vehicles, requests, config);
 
-                if (m.objective_score < base_score + 1000000000.0)
+                if (m.objective_score < base_score + 50000000.0)
                 {
                     if (m.objective_score < best_insertion_cost)
                     {
@@ -840,6 +840,7 @@ int main(int argc, char **argv)
     emp_file << "employee_id,pickup_time,drop_time\n";
     // Write the base objective and penalty as the first line in the vehicle file
     veh_file << std::fixed << std::setprecision(1) << final_base_obj << "," << total_penalty << "\n";
+    veh_file << "vehicle_id,category,employee_id,pickup_time,drop_time\n";
 
     for (size_t i = 0; i < final_solution.routes.size(); ++i)
     {
