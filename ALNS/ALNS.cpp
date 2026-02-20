@@ -10,6 +10,7 @@
 #include <vector>
 #include <algorithm>
 #include <iostream>
+#include<chrono>
 
 // Helper struct for Population
 struct SolutionState {
@@ -57,12 +58,27 @@ std::vector<Route> solveALNS(
     double T = 1000.0;
 
     // ------------------ Main loop ------------------
-    int tot_it =1000000;
+    int k =pow(emp.size(),1.5);
+    int tot_it = pow(10,8)/k;
+    // tot_it = std::max(,tot_it);
+    
+        auto start = std::chrono::high_resolution_clock::now(); // add  it just after main
+    
+    
+      
+    
     for (int it = 1; it < tot_it; it++) {
     
         int pIdx = std::uniform_int_distribution<>(0, POOL_SIZE - 1)(rng);
         SolutionState cur = pool[pIdx];
         auto next = cur.sol;
+          auto stop = std::chrono::high_resolution_clock::now();
+    
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
+    //    std:: cout << "Time taken: " << duration.count() << " ms" << std::endl;
+    if(duration.count()>=9000){
+        break;
+    }
 
         
         int d = selectOperator(
