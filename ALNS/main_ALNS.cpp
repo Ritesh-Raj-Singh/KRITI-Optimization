@@ -176,7 +176,7 @@ void generateOutputFiles(const std::vector<Route> &solution, const std::vector<V
     }
 
     vFile << std::fixed << std::setprecision(2) << totalOpCost << "," << totalPenalty << "\n";
-    //vFile << "vehicle_id,category,employee_id,pickup_time,drop_time\n";
+    vFile << "vehicle_id,category,employee_id,pickup_time,drop_time\n";
     eFile << "employee_id,pickup_time,drop_time\n";
 
     for (const Route &r : solution)
@@ -379,5 +379,6 @@ int main(int argc, char **argv)
     std::cout << "Time taken: " << duration.count() << " ms" << std::endl;
 }
     
+
 
 
