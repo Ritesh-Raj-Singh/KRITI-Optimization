@@ -64,6 +64,9 @@ void greedyRepair(std::vector<Route> &sol,
     }
 }
 
+
+
+
 void randomRepair(std::vector<Route> &sol,
                   const std::vector<Employee> &emp,
                   const std::vector<Vehicle> &veh,
@@ -86,12 +89,14 @@ void randomRepair(std::vector<Route> &sol,
                 break;
 
             std::vector<int> feasibleVehs;
+            std::vector<int> PosVehs;
             for (size_t v = 0; v < sol.size(); ++v)
             {
                 if(veh[v].speed<=0.0) continue;
                 Route tmp = sol[v];
                 tmp.seq.push_back(e.id);
                 tmp.isDirty = true;
+                PosVehs.push_back(v);
                 if (routeFeasible(tmp, veh[v], emp))
                 {
                     feasibleVehs.push_back(v);
@@ -108,7 +113,9 @@ void randomRepair(std::vector<Route> &sol,
             }
             else
             {
-                int v = std::uniform_int_distribution<>(0, sol.size() - 1)(rng);
+                // int v = std::uniform_int_distribution<>(0, sol.size() - 1)(rng);
+                 int idx = std::uniform_int_distribution<>(0, PosVehs.size() - 1)(rng);
+                int v = PosVehs[idx];
                 sol[v].seq.push_back(e.id);
                 assigned[e.id] = true;
                 sol[v].isDirty = true;
@@ -196,7 +203,7 @@ void regretRepair(std::vector<Route> &sol,
                         int bVeh = -1;
                         for (size_t v = 0; v < sol.size(); v++)
                         {
-
+                            if(veh[v].speed<=0) continue;
                             Route tmp = sol[v];
                             tmp.seq.push_back(e.id);
                             tmp.isDirty = true;
@@ -228,7 +235,7 @@ void regretRepair(std::vector<Route> &sol,
         double bestCost = std::numeric_limits<double>::max();
         for (size_t v = 0; v < sol.size(); v++)
         {
-
+            if(veh[v].speed<=0) continue;
             Route tmp = sol[v];
             tmp.seq.push_back(bestEmp);
             tmp.isDirty = true;
