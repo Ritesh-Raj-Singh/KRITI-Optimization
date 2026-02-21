@@ -362,10 +362,9 @@ int main(int argc, char **argv)
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
     std::cout << "Time taken: " << duration.count() << " ms" << std::endl;
 }
-<<<<<<< HEAD
+
     
 
 
 
-=======
->>>>>>> 5a2ab1f (fixed some errors)
+
