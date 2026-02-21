@@ -84,12 +84,18 @@ struct Config
     double time_weight = 0.0;
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     double alpha = 25000.0;;   // Ride Time Penalty
     double beta = 100000.0;   // Time Window Penalty
 =======
     double alpha = 100000.0; // Ride Time Penalty
     double beta = 1000.0;    // Time Window Penalty
 >>>>>>> c2ab57f (fixed speed related issues)
+=======
+    double alpha = 25000.0;
+    ;                        // Ride Time Penalty
+    double beta = 100000.0;  // Time Window Penalty
+>>>>>>> cda2e79 (Fixed bugs)
     double gamma = 500000.0; // Capacity/Sharing Penalty
 
     std::vector<int> max_delays = {0, 10, 20, 30, 45, 60};
@@ -362,15 +368,20 @@ class Route
 public:
     int vehicle_index;
     std::vector<Node> sequence;
+<<<<<<< HEAD
     std::set<int> served_employees;
+=======
+    std::vector<int> served_employees; // PERF: changed from std::set<int> for better cache locality and O(1) random access
+>>>>>>> cda2e79 (Fixed bugs)
 
     Route(int v_idx) : vehicle_index(v_idx) {}
 
-    RouteMetrics evaluate(const std::vector<Vehicle> &vehicles, const std::vector<Request> &requests, const Config &config)
+    // PERF: added update_times param (default false) so evaluate is non-mutating by default,
+    // eliminating the need to copy routes before scoring them.
+    RouteMetrics evaluate(const std::vector<Vehicle> &vehicles, const std::vector<Request> &requests, const Config &config, bool update_times = false)
     {
         const Vehicle &veh = vehicles[vehicle_index];
 
-        // PURE INTEGER ID TRACKING
         int current_id = veh.matrix_id;
         double current_time = veh.available_from;
 
@@ -387,11 +398,7 @@ public:
         for (auto &node : sequence)
         {
             const Request &req = requests[node.emp_index];
-
-            // O(1) Target Lookup
             int target_id = (node.type == PICKUP) ? req.matrix_id : office_matrix_id;
-
-            // O(1) Distance & Inline Math Time Retrieval
             double dist = fast_distance[current_id][target_id];
             double travel_time = (dist / veh.avg_speed_kmph) * 60.0;
 
@@ -404,7 +411,9 @@ public:
                     current_time = req.earliest_pickup;
             }
 
-            node.arrival_time = current_time;
+            // PERF: only write arrival_time when explicitly requested (e.g. final output)
+            if (update_times)
+                node.arrival_time = current_time;
 
             if (node.type == PICKUP)
             {
@@ -421,24 +430,34 @@ public:
             {
                 double drop_time = current_time;
                 current_load--;
+<<<<<<< HEAD
 
                 auto it = std::find(onboard.begin(), onboard.end(), node.emp_index);
                 if (it != onboard.end())
                     onboard.erase(it);
+=======
+>>>>>>> cda2e79 (Fixed bugs)
 
-                int buffer = (req.priority < config.max_delays.size()) ? config.max_delays[req.priority] : 0;
+                // PERF: swap-with-back + pop_back instead of find + erase (avoids shifting)
+                auto it = std::find(onboard.begin(), onboard.end(), node.emp_index);
+                if (it != onboard.end())
+                {
+                    *it = onboard.back();
+                    onboard.pop_back();
+                }
+
+                int buffer = (req.priority < (int)config.max_delays.size()) ? config.max_delays[req.priority] : 0;
 
                 if (drop_time > req.latest_drop + buffer)
                     m.time_window_violation += (drop_time - (req.latest_drop + buffer));
 
-                // O(1) Direct Distance Check
                 double direct_dist = fast_distance[req.matrix_id][office_matrix_id];
                 double direct_time = (direct_dist / veh.avg_speed_kmph) * 60.0;
 
                 double actual_ride_time = drop_time - pickup_times[node.emp_index];
                 double delay = actual_ride_time - direct_time;
 
-                int max_allowed_delay = (req.priority < config.max_delays.size()) ? config.max_delays[req.priority] : 999;
+                int max_allowed_delay = (req.priority < (int)config.max_delays.size()) ? config.max_delays[req.priority] : 999;
 
                 if (delay > max_allowed_delay)
                     m.ride_time_violation += (delay - max_allowed_delay);
@@ -495,8 +514,8 @@ public:
         {
             if (route.sequence.empty())
                 continue;
-            Route r_copy = route;
-            RouteMetrics m = r_copy.evaluate(vehicles, requests, config);
+            // PERF: evaluate directly without copying — safe because evaluate() is non-mutating by default
+            RouteMetrics m = route.evaluate(vehicles, requests, config);
             score += m.objective_score;
             if (!m.feasible)
                 all_routes_feasible = false;
@@ -514,11 +533,127 @@ class VNSSolver
     Config config;
     std::mt19937 rng;
 
+    // PERF: reusable scratch buffers — avoids heap allocation on every evaluateRoute() call
+    std::vector<double> pickup_times_buf;
+    std::vector<int> onboard_buf;
+    Route scratch_route; // PERF: reusable scratch route for localSearch() — avoids copying served_employees set
+
+    // PERF: solver-level evaluate that reuses member scratch buffers instead of allocating per call
+    RouteMetrics evaluateRoute(Route &route, bool update_times = false)
+    {
+        const Vehicle &veh = vehicles[route.vehicle_index];
+
+        int current_id = veh.matrix_id;
+        double current_time = veh.available_from;
+
+        double total_dist = 0.0;
+        double total_passenger_time = 0.0;
+        int current_load = 0;
+
+        // PERF: .assign() and .clear() reuse existing capacity — no heap allocation
+        pickup_times_buf.assign(requests.size(), 0.0);
+        onboard_buf.clear();
+
+        RouteMetrics m = {true, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+
+        for (auto &node : route.sequence)
+        {
+            const Request &req = requests[node.emp_index];
+            int target_id = (node.type == PICKUP) ? req.matrix_id : office_matrix_id;
+            double dist = fast_distance[current_id][target_id];
+            double travel_time = (dist / veh.avg_speed_kmph) * 60.0;
+
+            total_dist += dist;
+            current_time += travel_time;
+
+            if (node.type == PICKUP)
+            {
+                if (current_time < req.earliest_pickup)
+                    current_time = req.earliest_pickup;
+            }
+
+            if (update_times)
+                node.arrival_time = current_time;
+
+            if (node.type == PICKUP)
+            {
+                pickup_times_buf[node.emp_index] = current_time;
+                current_load++;
+                onboard_buf.push_back(node.emp_index);
+
+                if (current_load > veh.capacity)
+                    m.capacity_violation += (current_load - veh.capacity);
+                if (req.pref_premium && !veh.is_premium)
+                    m.capacity_violation += 10000;
+            }
+            else
+            {
+                double drop_time = current_time;
+                current_load--;
+
+                // PERF: swap-with-back + pop_back instead of find + erase (avoids shifting)
+                auto it = std::find(onboard_buf.begin(), onboard_buf.end(), node.emp_index);
+                if (it != onboard_buf.end())
+                {
+                    *it = onboard_buf.back();
+                    onboard_buf.pop_back();
+                }
+
+                int buffer = (req.priority < (int)config.max_delays.size()) ? config.max_delays[req.priority] : 0;
+
+                if (drop_time > req.latest_drop + buffer)
+                    m.time_window_violation += (drop_time - (req.latest_drop + buffer));
+
+                double direct_dist = fast_distance[req.matrix_id][office_matrix_id];
+                double direct_time = (direct_dist / veh.avg_speed_kmph) * 60.0;
+
+                double actual_ride_time = drop_time - pickup_times_buf[node.emp_index];
+                double delay = actual_ride_time - direct_time;
+
+                int max_allowed_delay = (req.priority < (int)config.max_delays.size()) ? config.max_delays[req.priority] : 999;
+
+                if (delay > max_allowed_delay)
+                    m.ride_time_violation += (delay - max_allowed_delay);
+
+                total_passenger_time += actual_ride_time;
+            }
+
+            int max_allowed_sharing = veh.capacity;
+            for (int e_idx : onboard_buf)
+            {
+                max_allowed_sharing = std::min(max_allowed_sharing, requests[e_idx].max_sharing);
+            }
+            if (current_load > max_allowed_sharing)
+                m.capacity_violation += (current_load - max_allowed_sharing);
+
+            current_id = target_id;
+        }
+
+        if (current_load != 0)
+            m.capacity_violation += std::abs(current_load) * 100;
+
+        m.total_cost = total_dist * veh.cost_per_km;
+        m.total_time = total_passenger_time;
+        m.total_dist = total_dist;
+
+        double base_obj = (config.cost_weight * m.total_cost) + (config.time_weight * m.total_time);
+        double penalties = (config.alpha * m.ride_time_violation) +
+                           (config.beta * m.time_window_violation) +
+                           (config.gamma * m.capacity_violation);
+
+        m.objective_score = base_obj + penalties;
+        m.feasible = (m.ride_time_violation < 1.0 && m.time_window_violation < 1.0 && m.capacity_violation < 1.0);
+
+        return m;
+    }
+
 public:
     VNSSolver(std::vector<Request> e, std::vector<Vehicle> v, Config c)
-        : requests(e), vehicles(v), config(c)
+        : requests(e), vehicles(v), config(c), scratch_route(0)
     {
         rng = std::mt19937(static_cast<unsigned int>(time(0)));
+        pickup_times_buf.resize(requests.size(), 0.0);
+        onboard_buf.reserve(16);
     }
 
     void repair(Solution &sol)
@@ -528,20 +663,33 @@ public:
             for (size_t r_idx = 0; r_idx < sol.routes.size(); ++r_idx)
             {
                 Route &route = sol.routes[r_idx];
-                RouteMetrics m = route.evaluate(vehicles, requests, config);
+                RouteMetrics m = evaluateRoute(route);
 
                 if (!m.feasible && !route.served_employees.empty())
                 {
+<<<<<<< HEAD
                     std::vector<int> emps(route.served_employees.begin(), route.served_employees.end());
                     std::uniform_int_distribution<int> dist(0, emps.size() - 1);
                     int emp_to_remove = emps[dist(rng)];
+=======
+                    // PERF: direct index access on vector (was std::advance on set iterator)
+                    std::uniform_int_distribution<int> dist(0, route.served_employees.size() - 1);
+                    int emp_to_remove = route.served_employees[dist(rng)];
+>>>>>>> cda2e79 (Fixed bugs)
 
                     std::vector<Node> new_seq;
                     for (auto &n : route.sequence)
                         if (n.emp_index != emp_to_remove)
                             new_seq.push_back(n);
                     route.sequence = new_seq;
-                    route.served_employees.erase(emp_to_remove);
+
+                    // PERF: swap-with-back + pop_back for O(1) vector removal (was set::erase)
+                    auto it = std::find(route.served_employees.begin(), route.served_employees.end(), emp_to_remove);
+                    if (it != route.served_employees.end())
+                    {
+                        *it = route.served_employees.back();
+                        route.served_employees.pop_back();
+                    }
                     sol.unassigned_requests.push_back(emp_to_remove);
                 }
             }
@@ -554,20 +702,19 @@ public:
         for (int emp_idx : unassigned)
         {
             double best_insertion_cost = INF;
-            int best_r = -1;
-            std::vector<Node> best_seq;
+            int best_r = -1; // PERF: store only best index, not best sequence (was best_seq vector copy)
 
             for (size_t r = 0; r < sol.routes.size(); ++r)
             {
-                Route cur = sol.routes[r];
-                double base_score = cur.evaluate(vehicles, requests, config).objective_score;
+                // PERF: evaluate in-place with push_back/pop_back — no Route copy per trial
+                Route &cur = sol.routes[r];
+                double base_score = evaluateRoute(cur).objective_score;
 
-                std::vector<Node> temp = cur.sequence;
-                temp.push_back({PICKUP, emp_idx, 0, 0});
-                temp.push_back({DROP, emp_idx, 0, 0});
-
-                cur.sequence = temp;
-                RouteMetrics m = cur.evaluate(vehicles, requests, config);
+                cur.sequence.push_back({PICKUP, emp_idx, 0, 0});
+                cur.sequence.push_back({DROP, emp_idx, 0, 0});
+                RouteMetrics m = evaluateRoute(cur);
+                cur.sequence.pop_back();
+                cur.sequence.pop_back();
 
                 if (m.objective_score < base_score + 50000000.0)
                 {
@@ -575,15 +722,15 @@ public:
                     {
                         best_insertion_cost = m.objective_score;
                         best_r = r;
-                        best_seq = temp;
                     }
                 }
             }
 
             if (best_r != -1)
             {
-                sol.routes[best_r].sequence = best_seq;
-                sol.routes[best_r].served_employees.insert(emp_idx);
+                sol.routes[best_r].sequence.push_back({PICKUP, emp_idx, 0, 0});
+                sol.routes[best_r].sequence.push_back({DROP, emp_idx, 0, 0});
+                sol.routes[best_r].served_employees.push_back(emp_idx); // PERF: push_back (was set::insert)
             }
             else
             {
@@ -608,35 +755,38 @@ public:
         {
             double best_score = INF;
             int best_r = -1;
-            std::vector<Node> best_seq;
+            int best_i = -1, best_j = -1; // PERF: store position indices instead of copying best_seq vector
 
             for (size_t r = 0; r < sol.routes.size(); ++r)
             {
-                Route cur = sol.routes[r];
+                // PERF: in-place insert/erase on actual route instead of creating temp vectors per (i,j)
+                Route &cur = sol.routes[r];
                 int n = cur.sequence.size();
                 for (int i = 0; i <= n; ++i)
                 {
+                    cur.sequence.insert(cur.sequence.begin() + i, {PICKUP, emp_idx, 0, 0});
                     for (int j = i + 1; j <= n + 1; ++j)
                     {
-                        std::vector<Node> temp = cur.sequence;
-                        temp.insert(temp.begin() + i, {PICKUP, emp_idx, 0, 0});
-                        temp.insert(temp.begin() + j, {DROP, emp_idx, 0, 0});
-                        cur.sequence = temp;
-                        RouteMetrics m = cur.evaluate(vehicles, requests, config);
+                        cur.sequence.insert(cur.sequence.begin() + j, {DROP, emp_idx, 0, 0});
+                        RouteMetrics m = evaluateRoute(cur);
                         if (m.objective_score < best_score)
                         {
                             best_score = m.objective_score;
                             best_r = r;
-                            best_seq = temp;
+                            best_i = i;
+                            best_j = j;
                         }
+                        cur.sequence.erase(cur.sequence.begin() + j);
                     }
+                    cur.sequence.erase(cur.sequence.begin() + i);
                 }
             }
 
             if (best_r != -1)
             {
-                sol.routes[best_r].sequence = best_seq;
-                sol.routes[best_r].served_employees.insert(emp_idx);
+                sol.routes[best_r].sequence.insert(sol.routes[best_r].sequence.begin() + best_i, {PICKUP, emp_idx, 0, 0});
+                sol.routes[best_r].sequence.insert(sol.routes[best_r].sequence.begin() + best_j, {DROP, emp_idx, 0, 0});
+                sol.routes[best_r].served_employees.push_back(emp_idx); // PERF: push_back (was set::insert)
             }
             else
             {
@@ -657,33 +807,38 @@ public:
             while (improved)
             {
                 improved = false;
-                double current_score = route.evaluate(vehicles, requests, config).objective_score;
-                std::vector<int> emps(route.served_employees.begin(), route.served_employees.end());
-                for (int emp : emps)
+                double current_score = evaluateRoute(route).objective_score;
+
+                // PERF: iterate by index on vector (was copy-to-vector from set)
+                for (size_t emp_i = 0; emp_i < route.served_employees.size(); ++emp_i)
                 {
-                    std::vector<Node> temp_seq;
+                    int emp = route.served_employees[emp_i];
+
+                    // PERF: use scratch_route to avoid copying served_employees set in inner loop
+                    scratch_route.vehicle_index = route.vehicle_index;
+                    scratch_route.sequence.clear();
                     for (auto &n : route.sequence)
                         if (n.emp_index != emp)
-                            temp_seq.push_back(n);
+                            scratch_route.sequence.push_back(n);
 
-                    int n = temp_seq.size();
+                    int n = scratch_route.sequence.size();
                     for (int i = 0; i <= n; ++i)
                     {
+                        // PERF: in-place insert/erase on scratch route instead of creating new vectors
+                        scratch_route.sequence.insert(scratch_route.sequence.begin() + i, {PICKUP, emp, 0, 0});
                         for (int j = i + 1; j <= n + 1; ++j)
                         {
-                            std::vector<Node> test = temp_seq;
-                            test.insert(test.begin() + i, {PICKUP, emp, 0, 0});
-                            test.insert(test.begin() + j, {DROP, emp, 0, 0});
-                            Route r_test = route;
-                            r_test.sequence = test;
-                            double s = r_test.evaluate(vehicles, requests, config).objective_score;
+                            scratch_route.sequence.insert(scratch_route.sequence.begin() + j, {DROP, emp, 0, 0});
+                            double s = evaluateRoute(scratch_route).objective_score;
                             if (s < current_score - 1e-5)
                             {
-                                route.sequence = test;
+                                route.sequence = scratch_route.sequence;
                                 current_score = s;
                                 improved = true;
                             }
+                            scratch_route.sequence.erase(scratch_route.sequence.begin() + j);
                         }
+                        scratch_route.sequence.erase(scratch_route.sequence.begin() + i);
                     }
                 }
             }
@@ -708,22 +863,40 @@ public:
 
             if (sol.routes[r_idx].served_employees.empty())
                 continue;
+<<<<<<< HEAD
             auto it = sol.routes[r_idx].served_employees.begin();
             std::advance(it, rng() % sol.routes[r_idx].served_employees.size());
             int emp = *it;
+=======
+
+            // PERF: direct index access on vector (was std::advance on set iterator)
+            std::uniform_int_distribution<int> emp_dist(0, sol.routes[r_idx].served_employees.size() - 1);
+            int emp = sol.routes[r_idx].served_employees[emp_dist(rng)];
+>>>>>>> cda2e79 (Fixed bugs)
 
             std::vector<Node> new_seq;
             for (auto &n : sol.routes[r_idx].sequence)
                 if (n.emp_index != emp)
                     new_seq.push_back(n);
             sol.routes[r_idx].sequence = new_seq;
+<<<<<<< HEAD
             sol.routes[r_idx].served_employees.erase(emp);
+=======
+
+            // PERF: swap-with-back + pop_back for O(1) vector removal (was set::erase)
+            auto it = std::find(sol.routes[r_idx].served_employees.begin(), sol.routes[r_idx].served_employees.end(), emp);
+            if (it != sol.routes[r_idx].served_employees.end())
+            {
+                *it = sol.routes[r_idx].served_employees.back();
+                sol.routes[r_idx].served_employees.pop_back();
+            }
+>>>>>>> cda2e79 (Fixed bugs)
 
             std::uniform_int_distribution<int> route_dist(0, sol.routes.size() - 1);
             int dest = route_dist(rng);
             sol.routes[dest].sequence.push_back({PICKUP, emp, 0, 0});
             sol.routes[dest].sequence.push_back({DROP, emp, 0, 0});
-            sol.routes[dest].served_employees.insert(emp);
+            sol.routes[dest].served_employees.push_back(emp); // PERF: push_back (was set::insert)
         }
     }
 
@@ -746,7 +919,7 @@ public:
             s_prime.calculateTotalScore(vehicles, requests, config);
             if (s_prime.total_score < current_sol.total_score)
             {
-                current_sol = s_prime;
+                current_sol = std::move(s_prime); // PERF: move instead of copy to avoid deep-copying all route data
                 k = 1;
                 if (current_sol.total_score < best_sol.total_score)
                 {
@@ -824,7 +997,7 @@ int main(int argc, char **argv)
     VNSSolver solver(requests, vehicles, config);
     int iterations_done = 0;
 
-    Solution final_solution = solver.solve(5000, iterations_done);
+    Solution final_solution = solver.solve(100000, iterations_done);
     double final_base_obj = 0.0;
     for (auto &r : final_solution.routes)
     {
@@ -875,7 +1048,7 @@ int main(int argc, char **argv)
         if (r.served_employees.empty())
             continue;
 
-        r.evaluate(vehicles, requests, config); // Finalize times
+        r.evaluate(vehicles, requests, config, true); // Finalize times
 
         std::vector<std::string> pickup_times(requests.size());
         for (const auto &node : r.sequence)
