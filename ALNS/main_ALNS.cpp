@@ -58,28 +58,37 @@ void printRouteTrace(const Route &r, const Vehicle &v, const std::vector<Employe
     if (r.seq.empty())
         return;
 
+    std::vector<double> pickupTime(emp.size(), -1);
+
     double t = v.startTime;
+    double t1 = 0.0;
+    
     double cx = v.x, cy = v.y;
-    double totalDist = 0;
+    double totalDist = 0.0;
+    
     std::vector<int> batch;
 
-    auto dropBatch = [&](double &currT, double &currX, double &currY)
+    auto processBatch = [&](double &currT, double &currX, double &currY)
     {
         if (batch.empty())
             return;
 
         const auto &last = emp[batch.back()];
         double dOff = distKm(currX, currY, last.destX, last.destY);
-        double tOff = (dOff / v.speed) * 60.0;
-        currT += tOff;
-        outDuration += tOff * batch.size();
+        double travelT = (dOff / v.speed) * 60.0;
+
         totalDist += dOff;
+        
+        double arrival = currT + travelT;
+        for (int id : batch) {
+            t1 += (arrival - pickupTime[id]);
+        }
+        currT = arrival;
 
         for (int id : batch)
         {
             std::cout << emp[id].originalId << "(drop) -> ";
         }
-        currT += 0;
 
         currX = last.destX;
         currY = last.destY;
@@ -88,47 +97,58 @@ void printRouteTrace(const Route &r, const Vehicle &v, const std::vector<Employe
 
     for (int eId : r.seq)
     {
+        const auto& e = emp[eId];
 
-        if (!checkBatchFits(batch, eId, v, emp, t, cx, cy, meta))
+        bool fits = true;
+        if (batch.size() + 1 > v.seatCap) fits = false;
+        else {
+            if (e.sharePref < (int)batch.size() + 1) fits = false;
+            for (int bid : batch) if (emp[bid].sharePref < (int)batch.size() + 1) fits = false;
+        }
+
+        if (!fits)
         {
-
-            dropBatch(t, cx, cy);
-
-            double dToE = distKm(cx, cy, emp[eId].x, emp[eId].y);
-            t += (dToE / v.speed) * 60.0;
-            outDuration += batch.size() * ((dToE / v.speed) * 60.0);
-            totalDist += dToE;
+            processBatch(t, cx, cy);
+            double d = distKm(cx, cy, e.x, e.y);
+            totalDist += d;
+            t += ((d / v.speed) * 60.0);  
         }
         else
         {
+        }
+        if (!batch.empty() && fits) { 
+             double d = distKm(cx, cy, e.x, e.y);
+             totalDist += d;
+             t += (d / v.speed) * 60.0;
 
-            double d = distKm(cx, cy, emp[eId].x, emp[eId].y);
-            t += (d / v.speed) * 60.0;
-            outDuration += batch.size() * ((d / v.speed) * 60.0);
-            totalDist += d;
+        } else if (batch.empty()) {
+             if (fits) {
+                 double d = distKm(cx, cy, e.x, e.y);
+                 totalDist += d;
+                 t += (d / v.speed) * 60.0;
+
+             }
         }
 
         std::cout << emp[eId].originalId << "(pickup) -> ";
 
-        if (t < emp[eId].ready)
-        {
-            outDuration += (emp[eId].ready - t) * batch.size();
-        }
-        double startService = std::max(t, emp[eId].ready);
+        double startService = std::max(t, e.ready);
         t = startService;
-        cx = emp[eId].x;
-        cy = emp[eId].y;
+        cx = e.x;
+        cy = e.y;
+        pickupTime[eId] = t;
         batch.push_back(eId);
     }
 
     if (!batch.empty())
     {
-        dropBatch(t, cx, cy);
+        processBatch(t, cx, cy);
     }
 
     std::cout << "End";
 
     outDist = totalDist;
+    outDuration = t1;
 }
 
 std::string formatTime(double mins)
