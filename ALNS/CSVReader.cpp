@@ -115,7 +115,7 @@ std::vector<Vehicle> readVehicles(const std::string& path) {
             std::cerr << "Parse error in line: " << line << std::endl;
             continue;
         }
-        v.endTime = 24.0 * 60.0;
+        v.endTime = 24.0 * 60.0*2.1;
         std::string cat = row[9];
         v.premium = (cat == "premium");
         data.push_back(v);
@@ -209,4 +209,5 @@ Metadata readMetadata(const std::string& path) {
     }
     return meta;
 }
+
 
