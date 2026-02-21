@@ -59,6 +59,7 @@ std::vector<Employee> readEmployees(const std::string& path) {
             e.destY = std::stod(row[5]);
             e.ready = parseTime(row[6]);
             e.due = parseTime(row[7]);
+            if(e.due<e.ready) e.due+=1440.0;
         } catch (...) {
             std::cerr << "Parse error in line: " << line << std::endl;
             continue;
@@ -209,5 +210,6 @@ Metadata readMetadata(const std::string& path) {
     }
     return meta;
 }
+
 
 
