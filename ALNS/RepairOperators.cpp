@@ -2,7 +2,6 @@
 #include <random>
 #include <algorithm>
 #include "CostFunction.h"
-#include "Feasibility.h"
 #include <limits>
 
 void greedyRepair(std::vector<Route> &sol,
@@ -37,14 +36,14 @@ void greedyRepair(std::vector<Route> &sol,
             int bestVeh = -1;
             for (size_t v = 0; v < sol.size(); v++)
             {   
-                if(veh[v].speed<=0.0) continue;
+                if(veh[v].speed<=0.0 || veh[v].seatCap<1) continue;
 
                 Route tmp = sol[v];
                 tmp.seq.push_back(e.id);
                 tmp.isDirty = true;
 
-                if (!routeFeasible(tmp, veh[v], emp))
-                    continue;
+                // if (!routeFeasible(tmp, veh[v], emp))
+                //     continue;
 
                 double c = routeCost(tmp, veh[v], emp, meta);
                 if (c < bestCost)
@@ -92,15 +91,14 @@ void randomRepair(std::vector<Route> &sol,
             std::vector<int> PosVehs;
             for (size_t v = 0; v < sol.size(); ++v)
             {
-                if(veh[v].speed<=0.0) continue;
+                if(veh[v].speed<=0.0 || veh[v].seatCap<1) continue;
                 Route tmp = sol[v];
                 tmp.seq.push_back(e.id);
                 tmp.isDirty = true;
                 PosVehs.push_back(v);
-                if (routeFeasible(tmp, veh[v], emp))
-                {
+               
                     feasibleVehs.push_back(v);
-                }
+            
             }
 
             if (!feasibleVehs.empty())
@@ -153,13 +151,13 @@ void regretRepair(std::vector<Route> &sol,
 
             for (size_t v = 0; v < sol.size(); v++)
             { 
-                if(veh[v].speed<=0.0) continue;
+               if(veh[v].speed<=0.0 || veh[v].seatCap<1) continue;
                 Route tmp = sol[v];
                 tmp.seq.push_back(e.id);
                 tmp.isDirty = true;
 
-                if (!routeFeasible(tmp, veh[v], emp))
-                    continue;
+                // // if (!routeFeasible(tmp, veh[v], emp))
+                //     continue;
 
                 double c = routeCost(tmp, veh[v], emp, meta);
                 costs.push_back(c);
@@ -203,13 +201,12 @@ void regretRepair(std::vector<Route> &sol,
                         int bVeh = -1;
                         for (size_t v = 0; v < sol.size(); v++)
                         {
-                            if(veh[v].speed<=0) continue;
+                           if(veh[v].speed<=0.0 || veh[v].seatCap<1) continue;
                             Route tmp = sol[v];
                             tmp.seq.push_back(e.id);
                             tmp.isDirty = true;
 
-                            if (!routeFeasible(tmp, veh[v], emp))
-                                continue;
+                         
 
                             double c = routeCost(tmp, veh[v], emp, meta);
                             if (c < bestCost)
@@ -235,13 +232,10 @@ void regretRepair(std::vector<Route> &sol,
         double bestCost = std::numeric_limits<double>::max();
         for (size_t v = 0; v < sol.size(); v++)
         {
-            if(veh[v].speed<=0) continue;
+            if(veh[v].speed<=0.0 || veh[v].seatCap<1) continue;
             Route tmp = sol[v];
             tmp.seq.push_back(bestEmp);
             tmp.isDirty = true;
-
-            if (!routeFeasible(tmp, veh[v], emp))
-                continue;
 
             double c = routeCost(tmp, veh[v], emp, meta);
             if (c < bestCost)

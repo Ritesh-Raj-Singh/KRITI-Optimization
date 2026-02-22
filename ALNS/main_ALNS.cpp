@@ -3,8 +3,6 @@
 #include "CostFunction.h"
 #include <iostream>
 #include <fstream>
-#include "Feasibility.h"
-
 #include "Distance.h"
 #include "mapper.h"
 #include <iomanip>

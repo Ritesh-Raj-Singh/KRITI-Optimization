@@ -1,4 +1,0 @@
-vehicle_id,fuel_type,vehicle_type,capacity,cost_per_km,avg_speed_kmph,current_lat,current_lng,available_from,category
-V01,electric,4W,3,10,30,12.935,77.62,08:00,premium
-V02,petrol,4W,4,14,35,12.92,77.61,08:00,normal
-V03,diesel,van,6,18,32,12.95,77.63,08:00,normal

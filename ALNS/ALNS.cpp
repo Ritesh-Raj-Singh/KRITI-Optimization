@@ -73,8 +73,8 @@ std::vector<Route> solveALNS(
     // ------------------ Main loop ------------------
     int k = pow(emp.size(), 1.8);
     int tot_it = pow(10, 8) / k;
+    tot_it = std::min(tot_it,1000000);
     // tot_it = std::max(,tot_it);
-
     auto start = std::chrono::high_resolution_clock::now(); // add  it just after main
 
     for (int it = 1; it < tot_it; it++)
@@ -87,7 +87,7 @@ std::vector<Route> solveALNS(
 
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
         //    std:: cout << "Time taken: " << duration.count() << " ms" << std::endl;
-        if (duration.count() >= 9000)
+        if (duration.count() >= 11500)
         {
             break;
         }
@@ -107,11 +107,11 @@ std::vector<Route> solveALNS(
             k1 = 0.20;
         else if (it < (int)(0.15 * tot_it))
             k1 = 0.15;
-        else if (it < (int)(0.9 * tot_it))
+        else if (it < (int)(0.95 * tot_it))
             k1 = 0.1;
         else
             k1 = 0.05;
-        int k2 = it < (tot_it / 1.01) ? 2 : 1;
+        int k2 = it < (tot_it*0.99) ? 2 : 1;
         int q = std::max(k2, static_cast<int>(k1 * emp.size()));
         if (d == RAND_D)
             randomDestroy(next, q);
