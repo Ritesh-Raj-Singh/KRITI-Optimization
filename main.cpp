@@ -77,9 +77,6 @@ double haversine(double lat1, double lon1, double lat2, double lon2)
     // Earth's radius in kilometers
     const double R = 6371.0;
 
-    // If you need Miles, use R = 3958.8;
-
-    // Convert differences to radians
     double dLat = toRadians(lat2 - lat1);
     double dLon = toRadians(lon2 - lon1);
 
