@@ -46,4 +46,4 @@ cmake ..
 make -j$(nproc)
 
 # Run the Server (Defaults to port 5555)
-./velora_server
+./server_app
