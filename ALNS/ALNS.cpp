@@ -74,7 +74,9 @@ std::vector<Route> solveALNS(
     int k = pow(emp.size(), 1.8);
     int tot_it = pow(10, 8) / k;
     // tot_it = std::max(,tot_it);
-
+     if(max_time>10 && max_time<=30) { tot_it*=2; }
+    else tot_it*=6;
+        
     auto start = std::chrono::high_resolution_clock::now(); // add  it just after main
 
     for (int it = 1; it < tot_it; it++)
@@ -223,4 +225,5 @@ std::vector<Route> solveALNS(
 
     return bestGlobal.sol;
 }
+
 
