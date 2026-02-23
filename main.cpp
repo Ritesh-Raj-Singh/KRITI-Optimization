@@ -66,7 +66,7 @@ void cleanup_tmp_dir(const fs::path &dir)
     fs::remove_all(dir, ec);
 }
 
-int do_haversine = 0;
+int do_haversine = 0, do_again = 0;
 double toRadians(double degree)
 {
     return degree * (M_PI / 180.0);
@@ -176,8 +176,8 @@ json generate_matrix_file(const std::string &empData,
                 block.push_back(j);
             blocks.push_back(block);
         }
-
         // ===================== THREAD FUNCTION =====================
+        std::atomic<bool> osrm_failed{false}; 
 
         auto fetch_block = [&](const std::vector<int> &srcBlock,
                                const std::vector<int> &dstBlock)
@@ -205,7 +205,7 @@ json generate_matrix_file(const std::string &empData,
                 if (i + 1 < dstBlock.size())
                     dstStr << ";";
             }
-
+            
             std::string url =
                 "http://router.project-osrm.org/table/v1/driving/" +
                 coordStr.str() +
@@ -217,24 +217,27 @@ json generate_matrix_file(const std::string &empData,
                                          std::to_string(srcBlock.front()) + "_" +
                                          std::to_string(dstBlock.front()) + ".json");
 
-            std::string cmd = "curl -sS \"" + url + "\" -o \"" + tmpJson.string() + "\"";
-            if (std::system(cmd.c_str()) != 0)
-                return;
+            if (!do_haversine) {
+                std::string cmd = "curl -sS \"" + url + "\" -o \"" + tmpJson.string() + "\"";
+                if (std::system(cmd.c_str()) != 0) {
+                    osrm_failed = true;
+                    return;
+                }
 
-            std::ifstream jf(tmpJson);
-            json j;
-            jf >> j;
+                std::ifstream jf(tmpJson);
+                json j;
+                if (jf.peek() != std::ifstream::traits_type::eof()) {
+                    jf >> j;
+                }
 
-            if (j.contains("distances") && !do_haversine)
-            {
-                // return;
+                if(!j.contains("distances")) {
+                    osrm_failed = true;
+                    return;
+                }
 
                 auto distances = j["distances"];
-
-                for (size_t i = 0; i < srcBlock.size(); ++i)
-                {
-                    for (size_t k = 0; k < dstBlock.size(); ++k)
-                    {
+                for (size_t i = 0; i < srcBlock.size(); ++i) {
+                    for (size_t k = 0; k < dstBlock.size(); ++k) {
                         outMatrix[srcBlock[i]][dstBlock[k]] =
                             distances[i][k].get<double>() / 1000.0;
                     }
@@ -242,12 +245,10 @@ json generate_matrix_file(const std::string &empData,
             }
             else
             {
-                for (size_t i = 0; i < srcBlock.size(); ++i)
-                {
-                    for (size_t k = 0; k < dstBlock.size(); ++k)
-                    {
+                // Haversine logic
+                for (size_t i = 0; i < srcBlock.size(); ++i) {
+                    for (size_t k = 0; k < dstBlock.size(); ++k) {
                         outMatrix[srcBlock[i]][dstBlock[k]] =
-                            // distances[i][k].get<double>() / 1000.0;
                             haversine(coords[srcBlock[i]].first, coords[srcBlock[i]].second,
                                       coords[dstBlock[k]].first, coords[dstBlock[k]].second);
                     }
@@ -259,16 +260,31 @@ json generate_matrix_file(const std::string &empData,
 
         std::vector<std::thread> threads;
 
-        for (const auto &srcBlock : blocks)
-        {
-            for (const auto &dstBlock : blocks)
-            {
+        for (const auto &srcBlock : blocks) {
+            for (const auto &dstBlock : blocks) {
                 threads.emplace_back(fetch_block, srcBlock, dstBlock);
             }
         }
 
-        for (auto &t : threads)
-            t.join();
+        for (auto &t : threads) {
+            if (t.joinable()) t.join();
+        }
+
+        if (osrm_failed && !do_haversine) {
+            do_haversine = 1; 
+            threads.clear();
+
+            // Restart threads entirely in Haversine mode
+            for (const auto &srcBlock : blocks) {
+                for (const auto &dstBlock : blocks) {
+                    threads.emplace_back(fetch_block, srcBlock, dstBlock);
+                }
+            }
+            
+            for (auto &t : threads) {
+                if (t.joinable()) t.join();
+            }
+        }
 
         // ===================== WRITE FINAL MATRIX =====================
 
