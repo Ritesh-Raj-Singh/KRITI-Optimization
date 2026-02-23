@@ -325,6 +325,12 @@ int main(int argc, char **argv)
         meta.objectiveTimeWeight = 1.0;
     }
     readDist(argv[1] + std::string("/matrix.txt"), (int)(employees.size() + vehicles.size()) + 1);
+
+    std::string mode_file = argv[1] + std::string("/mode.txt");
+    std::ifstream f1(mode_file);
+    f1 >> max_time;
+
+
     int idx = 0;
     for (int i = 0; i < employees.size(); i++)
     {
@@ -381,4 +387,5 @@ int main(int argc, char **argv)
 
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
     std::cout << "Time taken: " << duration.count() << " ms" << std::endl;
+
 }
