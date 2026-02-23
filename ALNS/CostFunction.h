@@ -4,6 +4,8 @@
 #include "Employee.h"
 #include <vector>
 
+inline double factor;
+
 #include "CSVReader.h" // For Metadata
 
 struct CostComponents {
@@ -11,6 +13,8 @@ struct CostComponents {
     double penaltyCost;
     double totalCost;
 };
+
+void calc_factor(const std::vector<Employee>& emp,const std::vector<Vehicle>& veh,const Metadata& meta);
 
 CostComponents getRouteCostComponents(const Route&, const Vehicle&, const std::vector<Employee>&, const Metadata&);
 double routeCost(const Route&, const Vehicle&, const std::vector<Employee>&, const Metadata&);
