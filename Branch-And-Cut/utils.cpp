@@ -108,7 +108,7 @@ Request createRequest(
 
     // r.max_ride_time = direct_time + allowed_delay;
     r.latest_drop += allowed_delay;
-    if (r.latest_drop - r.earliest_pickup <= 0)
+    if (r.latest_drop - r.earliest_pickup < 0)
         r.latest_drop += 1440;
     r.service_time = 0;
 

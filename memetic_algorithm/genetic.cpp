@@ -62,119 +62,12 @@ int timeToMinutes(const string &t)
 
 string minToTime(int m)
 {
-    int hh = m / 60;
+    int hh = (m / 60) % 24;
     int mm = m % 60;
     string h_s = (hh < 10 ? "0" : "") + to_string(hh);
     string m_s = (mm < 10 ? "0" : "") + to_string(mm);
     return h_s + ":" + m_s;
 }
-
-// =================== DISTANCE MATRIX ===================
-// Layout: E1..EN = indices 0..N-1
-//         V1..VM = indices N..N+M-1
-//         OFFICE = index N+M
-
-int MAT_N = 0;
-int MAT_V = 0;
-vector<vector<double>> distMatrix;
-
-void loadMatrix(const string &filename, int size)
-{
-    distMatrix.assign(size, vector<double>(size, 0.0));
-    ifstream fin(filename);
-    if (!fin)
-    {
-        cerr << "Cannot open matrix file: " << filename << "\n";
-        exit(1);
-    }
-    for (int i = 0; i < size; i++)
-        for (int j = 0; j < size; j++)
-            fin >> distMatrix[i][j];
-
-    cout << "[INFO] Loaded " << size << "x" << size
-         << " distance matrix from " << filename << "\n";
-}
-
-int matConvert(const string &a)
-{
-    if (a[0] == 'E')
-        return stoi(a.substr(1)) - 1;
-    if (a[0] == 'V')
-        return MAT_N + stoi(a.substr(1)) - 1;
-    return MAT_N + MAT_V; // OFFICE
-}
-
-double getDistFromMatrix(const string &a, const string &b)
-{
-    return distMatrix[matConvert(a)][matConvert(b)];
-}
-
-// Exact double minutes — no ceil, matches Branch-and-Cut
-double getTravelTime(const string &a, const string &b, double speed_kmh)
-{
-    double d = getDistFromMatrix(a, b);
-    return (d / speed_kmh) * 60.0;
-}
-
-string personMatId(int i) { return "E" + to_string(i + 1); }
-string vehicleMatId(int k) { return "V" + to_string(k + 1); }
-const string OFFICE_ID = "OFFICE";
-
-double getDistPP(int i, int j) { return getDistFromMatrix(personMatId(i), personMatId(j)); }
-double getDistPO(int i, int /*unused*/) { return getDistFromMatrix(personMatId(i), OFFICE_ID); }
-double getDistVP(int k, int i, int /*unused*/) { return getDistFromMatrix(vehicleMatId(k), personMatId(i)); }
-double getDistOP(int i, int /*unused*/) { return getDistFromMatrix(OFFICE_ID, personMatId(i)); }
-
-// =================== METADATA READER ===================
-
-void readMetadata(const string &filename)
-{
-    ifstream file(filename);
-    if (!file.is_open())
-    {
-        cerr << "[WARN] Cannot open metadata file " << filename << ", using defaults.\n";
-        return;
-    }
-
-    string line;
-    getline(file, line); // skip header
-
-    map<string, string> meta;
-    while (getline(file, line))
-    {
-        stringstream ss(line);
-        string key, value;
-        getline(ss, key, ',');
-        getline(ss, value, ',');
-        meta[trim(key)] = trim(value);
-    }
-    file.close();
-
-    if (meta.count("priority_1_max_delay_min"))
-        PRIORITY_DELAY[1] = stoi(meta["priority_1_max_delay_min"]);
-    if (meta.count("priority_2_max_delay_min"))
-        PRIORITY_DELAY[2] = stoi(meta["priority_2_max_delay_min"]);
-    if (meta.count("priority_3_max_delay_min"))
-        PRIORITY_DELAY[3] = stoi(meta["priority_3_max_delay_min"]);
-    if (meta.count("priority_4_max_delay_min"))
-        PRIORITY_DELAY[4] = stoi(meta["priority_4_max_delay_min"]);
-    if (meta.count("priority_5_max_delay_min"))
-        PRIORITY_DELAY[5] = stoi(meta["priority_5_max_delay_min"]);
-    PRIORITY_DELAY[0] = PRIORITY_DELAY[5];
-
-    if (meta.count("objective_cost_weight"))
-        OBJ_COST_WEIGHT = stod(meta["objective_cost_weight"]);
-    if (meta.count("objective_time_weight"))
-        OBJ_TIME_WEIGHT = stod(meta["objective_time_weight"]);
-
-    cout << "[INFO] Metadata loaded from " << filename << "\n";
-    cout << "  Priority delays: ";
-    for (int i = 1; i <= 5; i++)
-        cout << "P" << i << "=" << PRIORITY_DELAY[i] << " ";
-    cout << "\n";
-    cout << "  Weights: cost=" << OBJ_COST_WEIGHT << " time=" << OBJ_TIME_WEIGHT << "\n";
-}
-
 // =================== DATA STRUCTURES ===================
 
 enum ShareType
@@ -238,6 +131,119 @@ public:
         iota(giantTour.begin(), giantTour.end(), 0);
     }
 };
+
+// =================== DISTANCE MATRIX ===================
+// Layout: E1..EN = indices 0..N-1
+//         V1..VM = indices N..N+M-1
+//         OFFICE = index N+M
+
+int MAT_N = 0;
+int MAT_V = 0;
+vector<vector<double>> distMatrix;
+map<string, int> matMap; // Replaces matConvert
+const string OFFICE_ID = "OFFICE";
+
+void loadMatrix(const string &filename, int size)
+{
+    distMatrix.assign(size, vector<double>(size, 0.0));
+    ifstream fin(filename);
+    if (!fin)
+    {
+        cerr << "Cannot open matrix file: " << filename << "\n";
+        exit(1);
+    }
+    for (int i = 0; i < size; i++)
+        for (int j = 0; j < size; j++)
+            fin >> distMatrix[i][j];
+
+    cout << "[INFO] Loaded " << size << "x" << size
+         << " distance matrix from " << filename << "\n";
+}
+
+// Maps original CSV strings to their respective integer matrix indices
+void buildMatrixMap(const vector<Person> &persons, const vector<Driver> &drivers)
+{
+    matMap.clear();
+    for (int i = 0; i < (int)persons.size(); i++)
+        matMap[persons[i].original_id] = i;
+
+    for (int k = 0; k < (int)drivers.size(); k++)
+        matMap[drivers[k].original_id] = MAT_N + k;
+
+    matMap[OFFICE_ID] = MAT_N + MAT_V;
+}
+
+double getDistFromMatrix(const string &a, const string &b)
+{
+    return distMatrix[matMap[a]][matMap[b]];
+}
+
+// Exact double minutes — no ceil, matches Branch-and-Cut
+double getTravelTime(const string &a, const string &b, double speed_kmh)
+{
+    double d = getDistFromMatrix(a, b);
+    if (speed_kmh <= 0)
+        if (d < 0.005)
+            return 0;
+        else
+            return 1e7;
+    return (d / speed_kmh) * 60.0;
+}
+
+double getDistPP(int i, int j) { return distMatrix[i][j]; }
+double getDistPO(int i, int /*unused*/) { return distMatrix[i][MAT_N + MAT_V]; }
+double getDistVP(int k, int i, int /*unused*/) { return distMatrix[MAT_N + k][i]; }
+double getDistOP(int i, int /*unused*/) { return distMatrix[MAT_N + MAT_V][i]; }
+
+// =================== METADATA READER ===================
+
+void readMetadata(const string &filename)
+{
+    ifstream file(filename);
+    if (!file.is_open())
+    {
+        cerr << "[WARN] Cannot open metadata file " << filename << ", using defaults.\n";
+        return;
+    }
+
+    string line;
+    getline(file, line); // skip header
+
+    map<string, string> meta;
+    while (getline(file, line))
+    {
+        stringstream ss(line);
+        string key, value;
+        getline(ss, key, ',');
+        getline(ss, value, ',');
+        meta[trim(key)] = trim(value);
+    }
+    file.close();
+
+    if (meta.count("priority_1_max_delay_min"))
+        PRIORITY_DELAY[1] = stoi(meta["priority_1_max_delay_min"]);
+    if (meta.count("priority_2_max_delay_min"))
+        PRIORITY_DELAY[2] = stoi(meta["priority_2_max_delay_min"]);
+    if (meta.count("priority_3_max_delay_min"))
+        PRIORITY_DELAY[3] = stoi(meta["priority_3_max_delay_min"]);
+    if (meta.count("priority_4_max_delay_min"))
+        PRIORITY_DELAY[4] = stoi(meta["priority_4_max_delay_min"]);
+    if (meta.count("priority_5_max_delay_min"))
+        PRIORITY_DELAY[5] = stoi(meta["priority_5_max_delay_min"]);
+    PRIORITY_DELAY[0] = PRIORITY_DELAY[5];
+
+    if (meta.count("objective_cost_weight"))
+        OBJ_COST_WEIGHT = stod(meta["objective_cost_weight"]);
+    if (meta.count("objective_time_weight"))
+        OBJ_TIME_WEIGHT = stod(meta["objective_time_weight"]);
+
+    cout << "[INFO] Metadata loaded from " << filename << "\n";
+    cout << "  Priority delays: ";
+    for (int i = 1; i <= 5; i++)
+        cout << "P" << i << "=" << PRIORITY_DELAY[i] << " ";
+    cout << "\n";
+    cout << "  Weights: cost=" << OBJ_COST_WEIGHT << " time=" << OBJ_TIME_WEIGHT << "\n";
+}
 
 // =================== IMPORTED SOLUTION ===================
 
@@ -350,6 +356,8 @@ vector<Person> readEmployeeCSV(const string &filename)
         p.d_lng = stod(trim(dest_y_str));
         p.early_pickup = timeToMinutes(trim(time_start_str));
         p.late_drop = timeToMinutes(trim(time_end_str));
+        if (p.late_drop - p.early_pickup < 0)
+            p.late_drop += 1440;
 
         string veh_pref = trim(veh_pref_str);
         p.pref_vehicle = (veh_pref == "premium") ? PREMIUM : NORMAL;
@@ -539,9 +547,9 @@ void evaluateImported(Chromosome &chromo,
         bool isFirst = firstTripForVehicle[vIdx];
 
         int firstCust = customers[0];
-        string fromId = isFirst ? vehicleMatId(vIdx) : OFFICE_ID;
+        string fromId = isFirst ? drivers[vIdx].original_id : OFFICE_ID;
         double legDist = isFirst ? getDistVP(vIdx, firstCust, N) : getDistOP(firstCust, N);
-        double travel = getTravelTime(fromId, personMatId(firstCust), d.speed_kmph);
+        double travel = getTravelTime(fromId, persons[firstCust].original_id, d.speed_kmph);
 
         double currentVisTime = max(availTime + travel, (double)persons[firstCust].early_pickup);
 
@@ -555,7 +563,7 @@ void evaluateImported(Chromosome &chromo,
         {
             int pIdx = customers[k];
             double dist = getDistPP(tempPrev, pIdx);
-            double trav = getTravelTime(personMatId(tempPrev), personMatId(pIdx), d.speed_kmph);
+            double trav = getTravelTime(persons[tempPrev].original_id, persons[pIdx].original_id, d.speed_kmph);
             double arrival = currentVisTime + trav;
             currentVisTime = max(arrival, (double)persons[pIdx].early_pickup);
 
@@ -565,7 +573,7 @@ void evaluateImported(Chromosome &chromo,
         }
 
         double toOffice = getDistPO(tempPrev, N);
-        double travOffice = getTravelTime(personMatId(tempPrev), OFFICE_ID, d.speed_kmph);
+        double travOffice = getTravelTime(persons[tempPrev].original_id, OFFICE_ID, d.speed_kmph);
         double arrivalOffice = currentVisTime + travOffice;
         routeDist += toOffice;
 
@@ -582,17 +590,19 @@ void evaluateImported(Chromosome &chromo,
             if (arrivalOffice > allowedLateDrop + EPSILON)
             {
                 penalty += INFEASIBILITY_PENALTY * (arrivalOffice - allowedLateDrop);
-                cout << pIdx << " " << penalty << "\n";
+                cout << persons[pIdx].original_id << " " << penalty << "late time penalty" << "\n";
             }
 
             if (groupSize > persons[pIdx].max_sharing)
             {
                 penalty += PENALTY_SHARING_PREFERENCE;
+                cout << persons[pIdx].original_id << " " << penalty << "sharing penalty" << "\n";
             }
 
             if (persons[pIdx].pref_vehicle == PREMIUM && d.category != PREMIUM)
             {
                 penalty += PENALTY_PREMIUM_VEHICLE;
+                cout << persons[pIdx].original_id << " " << penalty << "vehicle pref penalty" << "\n";
             }
         }
 
@@ -738,12 +748,12 @@ void splitProcedure(Chromosome &chromo,
                 double availTime = V[i].driverAvailTimes[k];
                 bool isFirstTrip = (availTime == (double)drivers[k].start_time);
 
-                string fromId = isFirstTrip ? vehicleMatId(k) : OFFICE_ID;
+                string fromId = isFirstTrip ? drivers[k].original_id : OFFICE_ID;
                 double distStartToFirst = isFirstTrip ? getDistVP(k, firstCust, N)
                                                       : getDistOP(firstCust, N);
                 double totalDist = distStartToFirst + currentRouteDist + distToOffice;
 
-                double timeToFirst = getTravelTime(fromId, personMatId(firstCust), d.speed_kmph);
+                double timeToFirst = getTravelTime(fromId, persons[firstCust].original_id, d.speed_kmph);
                 double currentVisTime = max(availTime + timeToFirst,
                                             (double)persons[firstCust].early_pickup);
 
@@ -754,7 +764,7 @@ void splitProcedure(Chromosome &chromo,
                 for (int p = i + 1; p < j; p++)
                 {
                     int pIdx = chromo.giantTour[p];
-                    double legTime = getTravelTime(personMatId(tempPrev), personMatId(pIdx), d.speed_kmph);
+                    double legTime = getTravelTime(persons[tempPrev].original_id, persons[pIdx].original_id, d.speed_kmph);
                     double arrival = currentVisTime + legTime;
                     double startSrv = max(arrival, (double)persons[pIdx].early_pickup);
 
@@ -763,7 +773,7 @@ void splitProcedure(Chromosome &chromo,
                     tempPrev = pIdx;
                 }
 
-                double travelToOffice = getTravelTime(personMatId(tempPrev), OFFICE_ID, d.speed_kmph);
+                double travelToOffice = getTravelTime(persons[tempPrev].original_id, OFFICE_ID, d.speed_kmph);
                 double arrivalAtOffice = currentVisTime + travelToOffice;
 
                 double penalty = sharingPenalty + vehiclePenalty;
@@ -923,9 +933,9 @@ SolutionMetrics calculateDetailedMetrics(const Chromosome &best,
             auto &trip = dt.second[i];
             int firstCust = trip.customers[0];
 
-            string fromId = (i == 0) ? vehicleMatId(vIdx) : OFFICE_ID;
+            string fromId = (i == 0) ? drivers[vIdx].original_id : OFFICE_ID;
             double legDist = (i == 0) ? getDistVP(vIdx, firstCust, N) : getDistOP(firstCust, N);
-            double travel = getTravelTime(fromId, personMatId(firstCust), d.speed_kmph);
+            double travel = getTravelTime(fromId, persons[firstCust].original_id, d.speed_kmph);
 
             currentTime = max(currentTime + travel, (double)persons[firstCust].early_pickup);
             metrics.totalDistance += legDist;
@@ -938,7 +948,7 @@ SolutionMetrics calculateDetailedMetrics(const Chromosome &best,
             {
                 int cIdx = trip.customers[k];
                 double dist = getDistPP(prevCust, cIdx);
-                double trav = getTravelTime(personMatId(prevCust), personMatId(cIdx), d.speed_kmph);
+                double trav = getTravelTime(persons[prevCust].original_id, persons[cIdx].original_id, d.speed_kmph);
                 currentTime = max(currentTime + trav, (double)persons[cIdx].early_pickup);
 
                 pickupTimes.push_back(currentTime);
@@ -947,7 +957,7 @@ SolutionMetrics calculateDetailedMetrics(const Chromosome &best,
             }
 
             double toOffice = getDistPO(prevCust, N);
-            double travOffice = getTravelTime(personMatId(prevCust), OFFICE_ID, d.speed_kmph);
+            double travOffice = getTravelTime(persons[prevCust].original_id, OFFICE_ID, d.speed_kmph);
             double arrivalOffice = currentTime + travOffice;
             metrics.totalDistance += toOffice;
 
@@ -1021,8 +1031,8 @@ void writeCSVOutput(const string &filename,
             auto &trip = dt.second[i];
             int firstCust = trip.customers[0];
 
-            string fromId = (i == 0) ? vehicleMatId(vIdx) : OFFICE_ID;
-            double travel = getTravelTime(fromId, personMatId(firstCust), d.speed_kmph);
+            string fromId = (i == 0) ? drivers[vIdx].original_id : OFFICE_ID;
+            double travel = getTravelTime(fromId, persons[firstCust].original_id, d.speed_kmph);
             currentTime = max(currentTime + travel, (double)persons[firstCust].early_pickup);
 
             vector<double> pickupTimes;
@@ -1032,13 +1042,13 @@ void writeCSVOutput(const string &filename,
             for (size_t k = 1; k < trip.customers.size(); k++)
             {
                 int cIdx = trip.customers[k];
-                double trav = getTravelTime(personMatId(prevCust), personMatId(cIdx), d.speed_kmph);
+                double trav = getTravelTime(persons[prevCust].original_id, persons[cIdx].original_id, d.speed_kmph);
                 currentTime = max(currentTime + trav, (double)persons[cIdx].early_pickup);
                 pickupTimes.push_back(currentTime);
                 prevCust = cIdx;
             }
 
-            double travOffice = getTravelTime(personMatId(prevCust), OFFICE_ID, d.speed_kmph);
+            double travOffice = getTravelTime(persons[prevCust].original_id, OFFICE_ID, d.speed_kmph);
             double arrivalOffice = currentTime + travOffice;
 
             for (size_t k = 0; k < trip.customers.size(); k++)
@@ -1090,6 +1100,7 @@ int main(int argc, char *argv[])
 
     cout << "[INFO] Loading distance matrix...\n";
     loadMatrix(basePath + "matrix.txt", matSize);
+    buildMatrixMap(persons, drivers);
 
     // =================== INITIAL POPULATION ===================
     // Read the 6 algorithm outputs.
@@ -1099,7 +1110,7 @@ int main(int argc, char *argv[])
     vector<string> subfolders = {
         "ALNS",
         "Branch-And-Cut",
-        "god",
+        // "god",
         "Heterogeneous_DARP",
         "Variable_Neighbourhood_Search",
         "Clustering-Routing-DP-Solver"};
@@ -1277,10 +1288,10 @@ int main(int argc, char *argv[])
             auto &trip = dt.second[i];
             int firstCust = trip.customers[0];
 
-            string fromId = (i == 0) ? vehicleMatId(vIdx) : OFFICE_ID;
+            string fromId = (i == 0) ? drivers[vIdx].original_id : OFFICE_ID;
             double legDist = (i == 0) ? getDistVP(vIdx, firstCust, persons.size())
                                       : getDistOP(firstCust, persons.size());
-            double travel = getTravelTime(fromId, personMatId(firstCust), d.speed_kmph);
+            double travel = getTravelTime(fromId, persons[firstCust].original_id, d.speed_kmph);
             currentTime = max(currentTime + travel, (double)persons[firstCust].early_pickup);
 
             cout << "  Trip " << i + 1 << " (" << trip.customers.size() << " pax): ";
@@ -1295,7 +1306,7 @@ int main(int argc, char *argv[])
             {
                 int cIdx = trip.customers[k];
                 double dist = getDistPP(prevCust, cIdx);
-                double trav = getTravelTime(personMatId(prevCust), personMatId(cIdx), d.speed_kmph);
+                double trav = getTravelTime(persons[prevCust].original_id, persons[cIdx].original_id, d.speed_kmph);
                 currentTime = max(currentTime + trav, (double)persons[cIdx].early_pickup);
 
                 cout << " -> " << persons[cIdx].original_id
@@ -1305,7 +1316,7 @@ int main(int argc, char *argv[])
             }
 
             double toOffice = getDistPO(prevCust, persons.size());
-            double travOff = getTravelTime(personMatId(prevCust), OFFICE_ID, d.speed_kmph);
+            double travOff = getTravelTime(persons[prevCust].original_id, OFFICE_ID, d.speed_kmph);
             currentTime += travOff;
             vehicleTotalDist += toOffice;
 
