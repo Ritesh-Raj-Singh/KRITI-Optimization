@@ -53,11 +53,16 @@ enum VehicleCat
     PREMIUM = 1
 };
 
-int timeToMinutes(const string &t)
+int timeToMinutes(const string &s)
 {
-    int hh = stoi(t.substr(0, 2));
-    int mm = stoi(t.substr(3, 2));
-    return hh * 60 + mm;
+    if (s.empty())
+        return 0;
+    size_t p = s.find(':');
+    if (p == string::npos)
+        return stoi(s);
+    int h = stoi(s.substr(0, p));
+    int m = stoi(s.substr(p + 1));
+    return (h * 60) + m;
 }
 
 string minToTime(int m)
@@ -1170,6 +1175,7 @@ int main(int argc, char *argv[])
     mt19937 rng(chrono::steady_clock::now().time_since_epoch().count());
 
     auto start_time = chrono::high_resolution_clock::now();
+    auto st = chrono::high_resolution_clock::now();
 
     for (int gen = 0; gen < GENERATIONS; gen++)
     {
@@ -1208,6 +1214,14 @@ int main(int argc, char *argv[])
             nextPop.push_back(child);
         }
         population = nextPop;
+
+        auto current_time = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed = current_time - st;
+
+        if (elapsed.count() >= 2)
+        {
+            break;
+        }
     }
 
     // One final check after last generation

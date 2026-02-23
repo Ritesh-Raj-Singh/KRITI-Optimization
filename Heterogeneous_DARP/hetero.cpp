@@ -736,21 +736,6 @@ public:
                 cur.sequence.pop_back();
                 cur.sequence.pop_back();
 
-<<<<<<< HEAD
-                //if (m.objective_score < base_score + 50000000.0)
-                //{
-                //    if (m.objective_score < best_insertion_cost)
-                //    {
-                //        best_insertion_cost = m.objective_score;
-                //        best_r = r;
-                 //   }
-                //}
-                 if (m.objective_score < best_insertion_cost)
-                 {
-                     best_insertion_cost = m.objective_score;
-                     best_r = r;
-                 }
-=======
                 // if (m.objective_score < base_score + 50000000.0)
                 //{
                 //     if (m.objective_score < best_insertion_cost)
@@ -764,7 +749,6 @@ public:
                     best_insertion_cost = m.objective_score;
                     best_r = r;
                 }
->>>>>>> 8f60c4b (final hosted)
             }
 
             if (best_r != -1)
@@ -968,7 +952,7 @@ public:
             auto cur = std::chrono::high_resolution_clock::now();
             std::chrono::duration<double> elapsed = cur - st;
 
-            if (elapsed.count() >= 60)
+            if (elapsed.count() >= max_time)
             {
                 break;
             }
@@ -992,6 +976,11 @@ int main(int argc, char **argv)
 
     // 2. Set up filesystem path
     fs::path base_dir = argv[1];
+
+    fs::path mode_path = base_dir / "mode.txt";
+
+    std::ifstream f1(mode_path);
+    f1 >> max_time;
 
     if (!fs::exists(base_dir))
     {

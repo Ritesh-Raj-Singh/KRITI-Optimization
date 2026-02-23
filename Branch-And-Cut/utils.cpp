@@ -45,7 +45,7 @@ int getTravelTime(Coords a, Coords b, double speed_kmh)
 
 std::string minToTimeStr(int minutes)
 {
-    int h = (minutes / 60) % 24;
+    int h = (minutes / 60);
     int m = minutes % 60;
     std::ostringstream oss;
     oss << std::setw(2) << std::setfill('0') << h << ":"

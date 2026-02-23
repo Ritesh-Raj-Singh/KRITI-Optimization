@@ -16,7 +16,7 @@ endif
 # Variables
 CXX = g++
 CXXFLAGS = -std=c++17 -O3
-SRCS = main_ALNS.cpp ALNS.cpp CSVReader.cpp CostFunction.cpp DestroyOperators.cpp RepairOperators.cpp
+SRCS = main_ALNS.cpp ALNS.cpp CSVReader.cpp CostFunction.cpp DestroyOperators.cpp RepairOperators.cpp globals.cpp
 OBJS = $(SRCS:.cpp=.o)
 
 # Default target
