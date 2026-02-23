@@ -1,8 +1,8 @@
-# 🚀 Velora Optimization System
+# 🚀 Multi-Vehicle Route Optimization System
 
 ![C++](https://img.shields.io/badge/C++-17%2B-blue.svg) ![Next.js](https://img.shields.io/badge/Next.js-14-black) ![Linux](https://img.shields.io/badge/OS-Ubuntu-orange)
 
-**Velora** is a high-performance, full-stack Multi-Vehicle Employee Transportation Assignment (MVETA) solver developed for the **Kriti Route Optimization Challenge**. It features a "Race to the Best Solution" architecture, orchestrating seven distinct optimization algorithms concurrently to minimize corporate transportation costs and employee commute times.
+This high-performance, full-stack Multi-Vehicle Employee Transportation Assignment (MVETA) solver was developed for the **Kriti Route Optimization Challenge**. It features a "Race to the Best Solution" architecture, orchestrating seven distinct optimization algorithms concurrently to minimize corporate transportation costs and employee commute times.
 
 ## ✨ Key Features
 
