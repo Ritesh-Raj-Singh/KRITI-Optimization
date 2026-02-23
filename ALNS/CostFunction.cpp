@@ -5,14 +5,32 @@
 #include <vector>
 #include <cmath>
 
+
 static double priorityPenalty(int p){
     return 0.0 * (6-p) * (6-p); 
+}
+
+void calc_factor(const std::vector<Employee>& emp,const std::vector<Vehicle>& veh,const Metadata& meta){
+    double avg_sp=0.0;
+    double avg_cpk=0.0;
+    for(int i=0;i<(int)veh.size();i++){
+        avg_sp+=veh[i].speed;
+        avg_cpk+=veh[i].costPerKm;
+    }
+    avg_sp/=veh.size();
+    avg_cpk/=veh.size();
+    factor=0.0;
+    for(int i=0;i<(int)emp.size();i++){
+        double dis=path_len[i][emp.size()+veh.size()];
+        factor= std::max((dis*avg_cpk)*meta.objectiveCostWeight + (dis/avg_sp)*60*meta.objectiveTimeWeight,factor); 
+    }
+    factor*=1000;
 }
 
 CostComponents getRouteCostComponents(const Route& r, const Vehicle& v, const std::vector<Employee>& emp, const Metadata& meta){
     CostComponents cc = {0.0, 0.0, 0.0};
     if(v.speed <=0.0) {
-        cc={1e100,1e100,1e100};
+        cc={factor*1e100,factor*1e100,factor*1e100};
         return cc;
     }
     if (r.seq.empty()) return cc;
@@ -49,8 +67,9 @@ CostComponents getRouteCostComponents(const Route& r, const Vehicle& v, const st
             double due = e.due +getMaxLateness(e.priority,meta);
             if (arrival > due) {
                 double lateMins = arrival - due;
-                // Linear penalty: 100000 * lateMins
-                penaltyCost += 100000.0 * lateMins;
+
+                double t=lateMins/60;
+                penaltyCost += factor*(1.0 + t);
 
             } else {
 
@@ -67,7 +86,7 @@ CostComponents getRouteCostComponents(const Route& r, const Vehicle& v, const st
 
         // Vehicle Mismatch Penalty
         if (e.vehiclePref == "premium" && !v.premium) {
-            penaltyCost += 100000.0;
+            penaltyCost += factor;
         } 
         else if (e.vehiclePref == "normal" && v.premium) {
              // No penalty for normal in premium
@@ -118,7 +137,7 @@ CostComponents getRouteCostComponents(const Route& r, const Vehicle& v, const st
     }
 
     if (t > v.endTime) {
-         penaltyCost += 10000.0 * (t - v.endTime); 
+         penaltyCost += factor * (t - v.endTime); 
     }
 
 
@@ -145,5 +164,3 @@ double routeCost(const Route& r, const Vehicle& v, const std::vector<Employee>& 
     r.isDirty = false;
     return r.cachedCost;
 }
-
-
