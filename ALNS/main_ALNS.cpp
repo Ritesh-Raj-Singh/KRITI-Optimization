@@ -343,6 +343,8 @@ int main(int argc, char **argv)
     }
     mappy[{employees[0].destX, employees[0].destY}] = idx;
 
+    calc_factor(employees,vehicles,meta);
+    
     auto solution = solveALNS(employees, vehicles, meta);
 
     double totalCost = 0;
