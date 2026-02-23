@@ -8,7 +8,7 @@
 #include <iomanip>
 #include <chrono>
 std::map<std::pair<double, double>, int> mappy;
-double path_len[251][251];
+double path_len[1001][1001];
 
 bool checkBatchFits(const std::vector<int> &batch, int nextId, const Vehicle &v, const std::vector<Employee> &emp, double currentT, double currentX, double currentY, const Metadata &meta)
 {
