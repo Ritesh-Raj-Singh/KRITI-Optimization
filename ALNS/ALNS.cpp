@@ -74,7 +74,7 @@ std::vector<Route> solveALNS(
     // ------------------ Main loop ------------------
     if (emp.empty()) return initialSol;
     int k = pow(emp.size(), 1.8);
-    int tot_it = pow(10, 8) / std::max(1, k);
+    int tot_it =2.3* (pow(10, 8) / std::max(1, k));
     tot_it = std::min(tot_it,1000000);
 
     double cooling_rate = std::pow((T_end / T_start), (1.0 / tot_it));
@@ -92,7 +92,7 @@ std::vector<Route> solveALNS(
 
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
         //    std:: cout << "Time taken: " << duration.count() << " ms" << std::endl;
-        if (duration.count() >= 11500)
+        if (duration.count() >= 19700)
         {
             break;
         }
@@ -120,7 +120,7 @@ std::vector<Route> solveALNS(
 
         int q = std::max(k2, static_cast<int>(k1 * emp.size()));
         q=std::min(q,(int)emp.size());
-        
+
         if (d == RAND_D)
             randomDestroy(next, q);
         else if (d == WORST_D)
