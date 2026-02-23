@@ -117,7 +117,10 @@ std::vector<Route> solveALNS(
         else
             k1 = 0.05;
         int k2 = it < (tot_it*0.99) ? 2 : 1;
+
         int q = std::max(k2, static_cast<int>(k1 * emp.size()));
+        q=std::min(q,(int)emp.size());
+        
         if (d == RAND_D)
             randomDestroy(next, q);
         else if (d == WORST_D)
