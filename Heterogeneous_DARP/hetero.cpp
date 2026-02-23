@@ -524,7 +524,7 @@ public:
             if (!m.feasible)
                 all_routes_feasible = false;
         }
-        score += unassigned_requests.size() * 5000000.0;
+        score += unassigned_requests.size() * 1e12;
         total_score = score;
         feasible = all_routes_feasible && unassigned_requests.empty();
     }
@@ -736,19 +736,19 @@ public:
                 cur.sequence.pop_back();
                 cur.sequence.pop_back();
 
-                if (m.objective_score < base_score + 50000000.0)
-                {
-                    if (m.objective_score < best_insertion_cost)
-                    {
-                        best_insertion_cost = m.objective_score;
-                        best_r = r;
-                    }
-                }
-                // if (m.objective_score < best_insertion_cost)
-                // {
-                //     best_insertion_cost = m.objective_score;
-                //     best_r = r;
-                // }
+                //if (m.objective_score < base_score + 50000000.0)
+                //{
+                //    if (m.objective_score < best_insertion_cost)
+                //    {
+                //        best_insertion_cost = m.objective_score;
+                //        best_r = r;
+                 //   }
+                //}
+                 if (m.objective_score < best_insertion_cost)
+                 {
+                     best_insertion_cost = m.objective_score;
+                     best_r = r;
+                 }
             }
 
             if (best_r != -1)
