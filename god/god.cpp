@@ -21,7 +21,7 @@ int main(int argc, char *argv[])
 
     long long max_iterations = (argc > 5) ? std::atoll(argv[5]) : Params::DEFAULT_MAX_ITERATIONS;
 
-    // max_iterations = read_max_iterations(max_iter_file, max_iterations);
+    max_iterations = read_max_iterations(max_iter_file, max_iterations);
 
     std::cout << "Max iterations set to: " << max_iterations << "\n";
 
