@@ -29,7 +29,7 @@ void randomDestroy(std::vector<Route>& sol,int q){
     }
 }
 
-void worstCostDestroy(std::vector<Route>& sol,int q){
+void LongestRouteTailRemoval(std::vector<Route>& sol,int q){
 
     for(int k=0; k<q; ++k) {
         double maxCost = -1;
@@ -69,7 +69,7 @@ void vehicleDestroy(std::vector<Route>& sol){
     }
 }
 
-void timeWindowDestroy(std::vector<Route>& sol,
+void WorstRouteTailRemoval(std::vector<Route>& sol,
                        const std::vector<Employee>& emp,
                        const std::vector<Vehicle>& veh,
                        const Metadata& meta){
