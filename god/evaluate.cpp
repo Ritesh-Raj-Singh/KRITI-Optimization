@@ -1,0 +1,748 @@
+#include "evaluate.h"
+#include "params.h"
+#include <algorithm>
+#include <limits>
+#include <set>
+#include <iostream>
+
+double get_waiting_cost(double duration, char tariff_type, const DARPInstance &instance)
+{
+    if (duration <= 0.0 || tariff_type == '\0')
+    {
+        return 0.0;
+    }
+
+    const auto &tariff_table = (tariff_type == 'a') ? instance.tariff_a : instance.tariff_b;
+
+    for (const auto &bracket : tariff_table)
+    {
+        if (duration <= bracket.first)
+        {
+            return bracket.second;
+        }
+    }
+
+    return tariff_table.empty() ? 0.0 : tariff_table.back().second;
+}
+
+void calculate_route_stats(Route &route, DARPInstance &instance)
+{
+    if (route.stats_valid)
+    {
+        return;
+    }
+
+    route.f1 = 0.0;
+    route.f2 = 0.0;
+    route.viol_cap = 0.0;
+    route.viol_tw = 0.0;
+    route.viol_ride = 0.0;
+
+    if (route.sequence.empty())
+    {
+        route.stats_valid = true;
+        return;
+    }
+
+    const Vehicle &vehicle = *route.vehicle;
+    double speed = vehicle.average_speed;
+    double current_time = 0.0;
+
+    std::vector<double> &pickup_times = instance.pickup_times_scratch;
+    std::vector<int> &pickup_visited = instance.pickup_visited_scratch;
+    pickup_visited.clear();
+
+    double total_distance = 0.0;
+    int load = 0;
+    int sp_count[4] = {0};
+    double viol_cap = 0.0, viol_tw = 0.0, viol_ride = 0.0;
+    double cost_waiting = 0.0, employee_quality_sq = 0.0;
+
+    int prev_node_id = vehicle.depot_id;
+    const Node *prev_node = &instance.nodes[prev_node_id];
+
+    const Node *first_node = &instance.nodes[route.sequence.front()];
+    double dist_to_first = instance.get_dist(prev_node_id, first_node->id);
+    double start_time = std::max(prev_node->e, first_node->e - (dist_to_first / speed) * 60.0); // Convert hours to minutes
+
+    current_time = start_time;
+
+    for (int node_id : route.sequence)
+    {
+        const Node &node = instance.nodes[node_id];
+
+        double dist = instance.get_dist(prev_node_id, node.id);
+        double travel_time = (dist / speed) * 60.0; // Convert hours to minutes
+
+        total_distance += dist;
+        double arrival_time = current_time + prev_node->st + travel_time;
+
+        double start_service_time = std::max(node.e, arrival_time);
+
+        double waiting_time = start_service_time - arrival_time;
+
+        if (node.type == NodeType::DELIVERY || node.type == NodeType::PICKUP)
+        {
+            if (node.waiting_tariff != '\0')
+            {
+                cost_waiting += get_waiting_cost(waiting_time, node.waiting_tariff, instance);
+            }
+        }
+
+        // Employee Quality Logic
+        double wp_i = 0.0;
+        if (node.type == NodeType::PICKUP && arrival_time > node.e)
+            wp_i = arrival_time - node.e;
+        else if (node.type == NodeType::DELIVERY && arrival_time < node.l)
+            wp_i = node.l - arrival_time;
+        employee_quality_sq += (wp_i * node.priority);
+
+        // Load & TW Logic
+        load += node.load;
+        if (node.load > 0)
+            sp_count[node.sharing_preference]++;
+        else if (node.load < 0)
+            sp_count[node.sharing_preference]--;
+        int effective_cap = vehicle.capacity;
+        for (int k = 1; k <= 3; ++k)
+        {
+            if (sp_count[k] > 0)
+            {
+                effective_cap = std::min(effective_cap, k);
+                break;
+            }
+        }
+        if (load > effective_cap)
+            viol_cap += (load - effective_cap);
+        if (start_service_time > node.l)
+            viol_tw += (start_service_time - node.l) * node.priority;
+
+        // Ride time logic
+        if (node.type == NodeType::PICKUP)
+        {
+            pickup_times[node.id] = start_service_time;
+            pickup_visited.push_back(node.id);
+        }
+        else if (node.type == NodeType::DELIVERY)
+        {
+            int req_id = instance.get_req_id_by_node(node.id);
+            int pickup_node_id = instance.get_pickup_node_by_req(req_id);
+            if (pickup_times[pickup_node_id] != -1.0)
+            {
+                double ride = start_service_time - (pickup_times[pickup_node_id] + instance.nodes[pickup_node_id].st);
+                double max_r = instance.get_max_ride_time_by_req(req_id);
+                if (ride > max_r)
+                    viol_ride += (ride - max_r);
+            }
+        }
+        current_time = start_service_time;
+        prev_node = &node;
+        prev_node_id = node.id;
+    }
+
+    // Cleanup scratchpad
+    for (int id : pickup_visited)
+        pickup_times[id] = -1.0;
+
+    // Finalizing Logic for Return to Depot
+    double dist_to_depot = instance.get_dist(prev_node_id, vehicle.depot_id);
+
+    double cost_distance = total_distance;
+    double cost_duration = (current_time + prev_node->st) - start_time;
+
+    total_distance += dist_to_depot;
+
+    // Cost Calculations
+    double cost_dist = 0.0;
+    if (cost_distance <= vehicle.L)
+    {
+        cost_dist = vehicle.lambda_k;
+    }
+    else
+    {
+        cost_dist = vehicle.lambda_k + vehicle.c_k * (cost_distance - vehicle.L);
+    }
+
+    double cost_time_total = vehicle.ct_k * cost_duration;
+
+    int n_p = route.sequence.size() / 2;
+    double cost_employee_total = 0.0;
+    if (n_p > 1)
+    {
+        cost_employee_total = vehicle.cp * (n_p - 1);
+    }
+
+    route.f1 = cost_dist + cost_time_total + cost_employee_total + cost_waiting;
+    route.f2 = employee_quality_sq;
+
+    route.viol_cap = viol_cap;
+    route.viol_tw = viol_tw;
+    route.viol_ride = viol_ride;
+
+    route.total_distance = cost_distance;
+    route.total_duration = cost_duration;
+
+    route.is_feasible = (viol_cap == 0.0 && viol_tw == 0.0 && viol_ride == 0.0);
+    route.stats_valid = true;
+}
+
+double evaluate_solution(Solution &solution, DARPInstance &instance, double psi)
+{
+    double total_f1 = 0.0;
+    double total_f2 = 0.0;
+
+    double total_viol_cap = 0.0;
+    double total_viol_tw = 0.0;
+    double total_viol_ride = 0.0;
+
+    for (auto &route : solution.routes)
+    {
+        calculate_route_stats(route, instance);
+        total_f1 += route.f1;
+        total_f2 += route.f2;
+        total_viol_cap += route.viol_cap;
+        total_viol_tw += route.viol_tw;
+        total_viol_ride += route.viol_ride;
+    }
+
+    double weighted_f2 = psi * total_f2;
+
+    double unassigned_penalty = Params::UNASSIGNED_PENALTY * solution.unassigned_requests.size();
+
+    double f3 = (solution.alpha * total_viol_ride +
+                 solution.beta * total_viol_tw +
+                 solution.gamma * total_viol_cap +
+                 unassigned_penalty);
+
+    solution.f1 = total_f1;
+    solution.f2 = weighted_f2;
+    solution.f3 = f3;
+
+    return solution.total_cost();
+}
+
+double update_solution_costs(Solution &solution, DARPInstance &instance, double psi)
+{
+    double total_f1 = 0.0;
+    double total_f2 = 0.0;
+    double total_viol_cap = 0.0;
+    double total_viol_tw = 0.0;
+    double total_viol_ride = 0.0;
+
+    for (auto &route : solution.routes)
+    {
+        if (!route.stats_valid)
+            calculate_route_stats(route, instance);
+        total_f1 += route.f1;
+        total_f2 += route.f2;
+        total_viol_cap += route.viol_cap;
+        total_viol_tw += route.viol_tw;
+        total_viol_ride += route.viol_ride;
+    }
+
+    double weighted_f2 = psi * total_f2;
+    double unassigned_penalty = Params::UNASSIGNED_PENALTY * solution.unassigned_requests.size();
+    double f3 = (solution.alpha * total_viol_ride +
+                 solution.beta * total_viol_tw +
+                 solution.gamma * total_viol_cap +
+                 unassigned_penalty);
+
+    solution.f1 = total_f1;
+    solution.f2 = weighted_f2;
+    solution.f3 = f3;
+
+    return solution.total_cost();
+}
+
+double calculate_route_cost_delta(Route &route, DARPInstance &instance, double alpha, double beta, double gamma)
+{
+    calculate_route_stats(route, instance);
+
+    double f_val = (route.f1 +
+                    Params::F2_WEIGHT * route.f2 +
+                    alpha * route.viol_ride +
+                    beta * route.viol_tw +
+                    gamma * route.viol_cap);
+    return f_val;
+}
+
+std::pair<double, std::vector<int>> insert_request_best_position(
+    Route &route, const Request &request, DARPInstance &instance,
+    double alpha, double beta, double gamma)
+{
+    double best_cost = std::numeric_limits<double>::infinity();
+    int best_i = -1, best_j = -1; // indices relative to route.sequence
+    const int n = static_cast<int>(route.sequence.size());
+
+    const Vehicle &vehicle = *route.vehicle;
+    const double speed = vehicle.average_speed;
+    const int depot_id = vehicle.depot_id;
+    const Node &depot_node = instance.nodes[depot_id];
+
+    const int pickup_id = request.pickup_node.id;
+    const int delivery_id = request.delivery_node.id;
+    const Node &pickup_node = instance.nodes[pickup_id];
+    const Node &delivery_node = instance.nodes[delivery_id];
+
+    const int n_p = (n + 2) / 2;
+    // cost_employee_total logic:
+    // Original route has n/2 passengers. New route has (n+2)/2.
+    // Fixed cost component for employees:
+    const double cost_employee_total = (n_p > 1) ? vehicle.cp * (n_p - 1) : 0.0;
+
+    struct EvalState
+    {
+        double cur_time;
+        int load;
+        int sp_count[4];
+        double total_dist;
+        double cost_waiting;
+        double employee_q;
+        double viol_cap;
+        double viol_tw;
+        double viol_ride;
+        int prev_id;
+        double prev_st;
+    };
+
+    // Helper to process a single node and update state
+    auto process_node = [&](EvalState &s, int node_id, const Node &node) -> double
+    {
+        const double dist = instance.get_dist(s.prev_id, node_id);
+        s.total_dist += dist;
+        const double arrival = s.cur_time + s.prev_st + (dist / speed) * 60.0;
+        const double start_svc = std::max(node.e, arrival);
+        const double wait = start_svc - arrival;
+
+        if ((node.type == NodeType::DELIVERY || node.type == NodeType::PICKUP) &&
+            node.waiting_tariff != '\0')
+            s.cost_waiting += get_waiting_cost(wait, node.waiting_tariff, instance);
+
+        double wp = 0.0;
+        if (node.type == NodeType::PICKUP && arrival > node.e)
+            wp = arrival - node.e;
+        else if (node.type == NodeType::DELIVERY && arrival < node.l)
+            wp = node.l - arrival;
+        s.employee_q += wp * node.priority;
+
+        s.load += node.load;
+        if (node.load > 0)
+            s.sp_count[node.sharing_preference]++;
+        else if (node.load < 0)
+            s.sp_count[node.sharing_preference]--;
+
+        // Capacity check
+        int eff_cap = vehicle.capacity;
+        for (int k = 1; k <= 3; ++k)
+        {
+            if (s.sp_count[k] > 0)
+            {
+                eff_cap = std::min(eff_cap, k);
+                break;
+            }
+        }
+        if (s.load > eff_cap)
+            s.viol_cap += (s.load - eff_cap);
+
+        if (start_svc > node.l)
+            s.viol_tw += (start_svc - node.l) * node.priority;
+
+        s.cur_time = start_svc;
+        s.prev_id = node_id;
+        s.prev_st = node.st;
+        return start_svc;
+    };
+
+    // Global scratchpad usage
+    std::vector<double> &pickup_svc = instance.pickup_times_scratch;
+    std::vector<int> &pickup_cleanup = instance.pickup_visited_scratch;
+    pickup_cleanup.clear();
+
+    // ── Precompute Prefix of Original Route ───────────────────────────────────
+    // We can't reuse a single prefix for all i, because i changes the route structure.
+    // However, we can use a static vector to avoid reallocations.
+    static std::vector<EvalState> base_prefix;
+    if ((int)base_prefix.size() < n + 1) base_prefix.resize(n + 1);
+
+    double orig_start_time = 0.0;
+    if (n > 0)
+    {
+        const int first = route.sequence[0];
+        const double d = instance.get_dist(depot_id, first);
+        orig_start_time = std::max(depot_node.e, instance.nodes[first].e - (d / speed) * 60.0);
+        
+        EvalState st{orig_start_time, 0, {0, 0, 0, 0}, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, depot_id, depot_node.st};
+        for (int k = 0; k < n; ++k)
+        {
+            const int nid = route.sequence[k];
+            const Node &nd = instance.nodes[nid];
+            double svc = process_node(st, nid, nd);
+            if (nd.type == NodeType::PICKUP) {
+                pickup_svc[nid] = svc;
+                pickup_cleanup.push_back(nid);
+            }
+            base_prefix[k] = st;
+        }
+    }
+    
+    // Scratchpad to restore pickup times when we deviate
+    static std::vector<std::pair<int, double>> pickup_restores;
+
+    // ── Outer Loop: Try inserting Pickup at position i ────────────────────────
+    // Insertion at i means: [0..i-1] -> P -> [i..n-1]
+    for (int i = 0; i <= n; ++i)
+    {
+        // 1. Construct Reference Trajectory for Route with P at i (but no D)
+        //    This allows us to handle the "suffix" logic efficiently.
+        //    Ref Trajectory size: n + 1 nodes.
+        
+        static std::vector<EvalState> ref_traj;
+        static std::vector<double> ref_cap_adj; // Adjustment for capacity if P is removed (for D suffix)
+        if ((int)ref_traj.size() < n + 2) ref_traj.resize(n + 2);
+        if ((int)ref_cap_adj.size() < n + 2) ref_cap_adj.resize(n + 2);
+
+        // Populate ref_traj up to i (copy from base_prefix)
+        EvalState st;
+        if (i == 0)
+        {
+            const double d_to_p = instance.get_dist(depot_id, pickup_id);
+            double st_time = std::max(depot_node.e, pickup_node.e - (d_to_p / speed) * 60.0);
+            st = {st_time, 0, {0,0,0,0}, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, depot_id, depot_node.st};
+        }
+        else
+        {
+            st = base_prefix[i - 1];
+            // Restore pickup times from base (they might have been overwritten by previous loop iters? 
+            // No, we rely on base_prefix logic being stateless wrt pickup_svc global. 
+            // Wait, base_prefix logic writes to pickup_svc. 
+            // We need to ensure pickup_svc is valid for the prefix [0..i-1].
+            // Since we don't modify pickup_svc for the prefix in the inner loops, it should be fine 
+            // AS LONG AS we restore any changes made to pickup_svc in the suffix/D-insertion.)
+        }
+
+        // Process Pickup P
+        double p_start_svc = process_node(st, pickup_id, pickup_node);
+        
+        // Save old pickup value if exists (unlikely for new request, but good practice)
+        double saved_p_svc = pickup_svc[pickup_id];
+        pickup_svc[pickup_id] = p_start_svc;
+        
+        ref_traj[i] = st; // State after P
+
+        // Process Rest of Route (Suffix after P) -> ref_traj
+        // Indices in ref_traj: P is at i. Original node k (where k>=i) is at i + 1 + (k-i) = k+1.
+        bool possible = true;
+        for (int k = i; k < n; ++k)
+        {
+            int nid = route.sequence[k];
+            const Node &nd = instance.nodes[nid];
+            double svc = process_node(st, nid, nd);
+            
+            // Update pickup_svc for ref trajectory? 
+            // Yes, because D insertion depends on these times for ride constraints.
+            // But we must NOT lose the original pickup_svc values from base_prefix for the next 'i'.
+            // Actually, next 'i' starts from scratch or base_prefix, which assumes pickup_svc is set.
+            // WE MUST RESTORE pickup_svc for nodes k..n-1 before next i loop.
+            pickup_restores.push_back({nid, pickup_svc[nid]});
+            if (nd.type == NodeType::PICKUP) {
+                pickup_svc[nid] = svc;
+            } else if (nd.type == NodeType::DELIVERY) {
+                // Check ride time for existing requests in Ref Traj
+                int rid = instance.get_req_id_by_node(nid);
+                int pid = instance.get_pickup_node_by_req(rid);
+                if (pickup_svc[pid] != -1.0) {
+                    double ride = svc - (pickup_svc[pid] + instance.nodes[pid].st);
+                    double max_r = instance.get_max_ride_time_by_req(rid);
+                    if (ride > max_r) st.viol_ride += (ride - max_r);
+                }
+            }
+            ref_traj[k + 1] = st;
+        }
+
+        // ── Precompute Capacity Adjustment for Suffix ─────────────────────────
+        // In Ref Traj, P is on board for the whole suffix (load +1).
+        // If we insert D at j, P is dropped off, so load becomes (RefLoad - 1) for suffix.
+        // We compute: Cost(Load - 1) - Cost(Load) for each node.
+        // This allows O(1) capacity update when splicing.
+        // We iterate backwards to accumulate the adjustment.
+        double acc_cap_adj = 0.0;
+        int p_pref = request.pickup_node.sharing_preference; // P's sharing pref
+
+        // The suffix after D at j corresponds to ref_traj indices [j+1 ... n].
+        // (If D is at j relative to Ref, nodes start at j).
+        // Let's index by the ref_traj index.
+        for (int k = n; k > i; --k) // k goes from n down to i+1
+        {
+            EvalState &s = ref_traj[k];
+            // Compute violations if we remove P
+            // P adds +1 to load, and +1 to sp_count[p_pref].
+            int mod_load = s.load - 1;
+            int mod_sp[4] = {s.sp_count[0], s.sp_count[1], s.sp_count[2], s.sp_count[3]};
+            mod_sp[p_pref]--;
+            
+            double mod_viol = 0.0;
+            int eff_cap = vehicle.capacity;
+            for (int m = 1; m <= 3; ++m) {
+                if (mod_sp[m] > 0) {
+                    eff_cap = std::min(eff_cap, m);
+                    break;
+                }
+            }
+            if (mod_load > eff_cap) mod_viol = (mod_load - eff_cap);
+            
+            // Delta = New - Old
+            double delta = mod_viol - s.viol_cap; // This is the change *at this node*
+            
+            // However, ref_traj[k].viol_cap is CUMULATIVE.
+            // We need the non-cumulative delta.
+            // Actually, simpler: RefTraj stores cumulative.
+            // We want to know: "If I graft the tail starting at k, how much does the TOTAL viol_cap change?"
+            // The change is sum_{m=k}^{n} (Viol_Without_P_at_m - Viol_With_P_at_m).
+            // Let's store this sum in ref_cap_adj[k].
+            
+            // Re-calculate non-cumulative viol for current node s:
+            // We need previous state's viol_cap to subtract? 
+            // No, easier: calculate local viol for s, and local viol for s_mod.
+            // s.viol_cap is cumulative. 
+            // Local_Viol_s = s.viol_cap - ref_traj[k-1].viol_cap.
+            double prev_viol = ref_traj[k-1].viol_cap;
+            double local_viol = s.viol_cap - prev_viol;
+            
+            acc_cap_adj += (mod_viol - local_viol);
+            ref_cap_adj[k] = acc_cap_adj;
+        }
+
+        // ── Inner Loop: Try inserting Delivery D at position j ────────────────
+        // j is index in the NEW route [0..i] (P is at i).
+        // D must be after P, so j ranges from i+1 to n+1.
+        // In Ref Traj, the node at j-1 is the node *before* D.
+        for (int j = i + 1; j <= n + 1; ++j)
+        {
+            EvalState st_j = ref_traj[j - 1]; // State before D
+            
+            // Insert D
+            double d_start_svc = process_node(st_j, delivery_id, delivery_node);
+            
+            // Check P->D Ride Time
+            {
+                double ride = d_start_svc - (p_start_svc + pickup_node.st);
+                if (ride > request.max_ride_time) st_j.viol_ride += (ride - request.max_ride_time);
+            }
+
+            // Delta Pruning
+            // Compare st_j (after D) with ref_traj[j] (node that would follow D).
+            // Note: ref_traj[j] is the state of the node *after* D's position in Ref Traj.
+            // If j == n+1, D is at end, no suffix.
+            if (j == n + 1)
+            {
+                // Calculate Final Cost
+                double dist_to_depot = instance.get_dist(st_j.prev_id, depot_id);
+                double total_dist = st_j.total_dist + dist_to_depot;
+                
+                double cost_dist = (total_dist <= vehicle.L) ? vehicle.lambda_k : (vehicle.lambda_k + vehicle.c_k * (total_dist - vehicle.L));
+                double cost_dur = vehicle.ct_k * ((st_j.cur_time + st_j.prev_st) - orig_start_time);
+                
+                double f1 = cost_dist + cost_dur + cost_employee_total + st_j.cost_waiting;
+                double f2 = st_j.employee_q;
+                double cost = f1 + Params::F2_WEIGHT * f2 + alpha * st_j.viol_ride + beta * st_j.viol_tw + gamma * st_j.viol_cap;
+                
+                if (cost < best_cost) {
+                    best_cost = cost;
+                    best_i = i;
+                    best_j = j;
+                }
+            }
+            else
+            {
+                // Try grafting suffix
+                // We compare the arrival time at the next node (ref_traj[j].prev_id, which is route.sequence[j-1])
+                // if we come from D, vs if we came from ref_traj[j-1].
+                
+                int next_nid = route.sequence[j - 1]; // The node after D
+                double dist_d_next = instance.get_dist(delivery_id, next_nid);
+                double arrival_at_next = st_j.cur_time + delivery_node.st + (dist_d_next / speed) * 60.0;
+                
+                // Ref Traj: arrival at next_nid was calculated from ref_traj[j-1].
+                // However, ref_traj[j] state HAS the arrival time *stored*? No.
+                // process_node calculates arrival, then start_svc. 
+                // We can check if start_svc is same?
+                // ref_traj[j] stores the state *after* processing next_nid.
+                // We need to know the arrival time at next_nid in Ref Traj.
+                // We can re-calculate it cheaply:
+                // double ref_arrival = ref_traj[j-1].cur_time + ref_traj[j-1].prev_st + (dist(prev, next)/speed)...
+                // Or just: look at ref_traj[j].cur_time. 
+                // If arrival_at_next <= ref_traj[j].cur_time, AND 
+                // (ref_traj[j].cur_time == next_node.e || arrival_at_next >= next_node.e ??)
+                
+                // Simpler: Check delta in arrival time.
+                // In Ref Traj: prev node was route.sequence[j-2] (or P if j-1=i).
+                // In New: prev node is D.
+                // We need to fetch the ref_arrival from Ref logic?
+                // Actually, if we just check if (arrival_at_next == ref_traj[j].arrival_derived??)
+                
+                // Let's just simulate the NEXT node. If the `start_svc` matches `ref_traj[j].cur_time`,
+                // then all subsequent time windows and ride times match.
+                // (Assuming waiting time absorbs small diffs).
+                
+                EvalState st_next = st_j;
+                double next_start_svc = process_node(st_next, next_nid, instance.nodes[next_nid]);
+                
+                // Check if we merged
+                if (std::abs(next_start_svc - ref_traj[j].cur_time) < 1e-4)
+                {
+                    // GRAFT!
+                    // Suffix totals from ref_traj[j] to ref_traj[n]
+                    EvalState &ref_end = ref_traj[n];
+                    EvalState &ref_curr = ref_traj[j];
+                    
+                    st_next.total_dist += (ref_end.total_dist - ref_curr.total_dist);
+                    st_next.cost_waiting += (ref_end.cost_waiting - ref_curr.cost_waiting);
+                    st_next.employee_q += (ref_end.employee_q - ref_curr.employee_q);
+                    st_next.viol_tw += (ref_end.viol_tw - ref_curr.viol_tw);
+                    st_next.viol_ride += (ref_end.viol_ride - ref_curr.viol_ride);
+                    
+                    // Capacity: Use precalculated adjustment
+                    double cap_base_diff = (ref_end.viol_cap - ref_curr.viol_cap);
+                    double cap_adj = ref_cap_adj[j+1]; // Adjustment for nodes [j+1 ... n]
+                    // Note: st_next includes processing of 'next_nid' (index j).
+                    // We need to adjust capacity for next_nid? 
+                    // No, st_next processed next_nid with D logic (so P is off).
+                    // ref_traj[j] processed next_nid with P logic.
+                    // So we effectively replaced P-logic-node with D-logic-node in st_next.
+                    // The graft adds (ref_end - ref_curr), which is P-logic for [j+1..n].
+                    // We need to adjust that part.
+                    st_next.viol_cap += (cap_base_diff + cap_adj);
+                    
+                    // Add depot return from Ref
+                    st_next.prev_id = ref_end.prev_id;
+                    st_next.prev_st = ref_end.prev_st;
+                    st_next.cur_time = ref_end.cur_time; // Times match
+                    
+                    // Final Cost
+                    double dist_to_depot = instance.get_dist(st_next.prev_id, depot_id);
+                    double total_dist = st_next.total_dist + dist_to_depot;
+                    double cost_dist = (total_dist <= vehicle.L) ? vehicle.lambda_k : (vehicle.lambda_k + vehicle.c_k * (total_dist - vehicle.L));
+                    double cost_dur = vehicle.ct_k * ((st_next.cur_time + st_next.prev_st) - orig_start_time);
+                    
+                    double f1 = cost_dist + cost_dur + cost_employee_total + st_next.cost_waiting;
+                    double f2 = st_next.employee_q;
+                    double cost = f1 + Params::F2_WEIGHT * f2 + alpha * st_next.viol_ride + beta * st_next.viol_tw + gamma * st_next.viol_cap;
+                    
+                    if (cost < best_cost) {
+                        best_cost = cost;
+                        best_i = i;
+                        best_j = j;
+                    }
+                }
+                else
+                {
+                    // No merge, continue simulation iteratively
+                    // (But keep checking for merge? To save code size, just run to end)
+                    // ... Or implement a simple loop
+                    
+                    bool aborted = false;
+                    for (int k = j + 1; k <= n; ++k) // indices in Ref
+                    {
+                         // Lower bound check could go here
+                         int nid = route.sequence[k-1];
+                         const Node &nd = instance.nodes[nid];
+                         double svc = process_node(st_next, nid, nd);
+                         
+                         if (nd.type == NodeType::DELIVERY) {
+                             int rid = instance.get_req_id_by_node(nid);
+                             int pid = instance.get_pickup_node_by_req(rid);
+                             // Need pickup time. Since we didn't merge, we might have new pickup times?
+                             // No, pickups only change if we change a pickup node's svc time.
+                             // D is delivery. Suffix might contain pickups? Yes.
+                             // If suffix has pickup, we update pickup_svc. 
+                             // We must manage restore!
+                             // For simplicity in this branch: rely on global pickup_svc.
+                             // We must save overwritten values.
+                             // But wait, the outer loop restore logic handles ref_traj writes.
+                             // This inner manual loop writes to pickup_svc too.
+                             // We need a local restore list?
+                             if (pickup_svc[pid] != -1.0) {
+                                double ride = svc - (pickup_svc[pid] + instance.nodes[pid].st);
+                                double max_r = instance.get_max_ride_time_by_req(rid);
+                                if (ride > max_r) st_next.viol_ride += (ride - max_r);
+                             }
+                         } else if (nd.type == NodeType::PICKUP) {
+                             // Save old value locally? 
+                             // We are deep in loops. 
+                             // Optimized path: just update, and ensure we repair at end of j loop.
+                             // We can just add to pickup_restores! 
+                             // But pickup_restores is popped after 'i' loop.
+                             // That's fine. i loop rebuilds ref_traj anyway.
+                             pickup_restores.push_back({nid, pickup_svc[nid]});
+                             pickup_svc[nid] = svc;
+                         }
+                    }
+                    
+                    // Final Cost (Manual branch)
+                    double dist_to_depot = instance.get_dist(st_next.prev_id, depot_id);
+                    double total_dist = st_next.total_dist + dist_to_depot;
+                    double cost_dist = (total_dist <= vehicle.L) ? vehicle.lambda_k : (vehicle.lambda_k + vehicle.c_k * (total_dist - vehicle.L));
+                    double cost_dur = vehicle.ct_k * ((st_next.cur_time + st_next.prev_st) - orig_start_time);
+                    
+                    double f1 = cost_dist + cost_dur + cost_employee_total + st_next.cost_waiting;
+                    double f2 = st_next.employee_q;
+                    double cost = f1 + Params::F2_WEIGHT * f2 + alpha * st_next.viol_ride + beta * st_next.viol_tw + gamma * st_next.viol_cap;
+                    
+                    if (cost < best_cost) {
+                        best_cost = cost;
+                        best_i = i;
+                        best_j = j;
+                    }
+                }
+            }
+        }
+        
+        // Restore pickup_svc for next i
+        for (auto it = pickup_restores.rbegin(); it != pickup_restores.rend(); ++it) {
+            pickup_svc[it->first] = it->second;
+        }
+        pickup_restores.clear();
+        pickup_svc[pickup_id] = saved_p_svc; // Restore P's value too
+    }
+    
+    // Cleanup scratchpad (safety)
+    for (int id : pickup_cleanup) pickup_svc[id] = -1.0;
+
+    std::vector<int> best_seq;
+    if (best_i != -1)
+    {
+        best_seq.reserve(n + 2);
+        best_seq.insert(best_seq.end(), route.sequence.begin(), route.sequence.begin() + best_i);
+        best_seq.push_back(pickup_id);
+        best_seq.insert(best_seq.end(), route.sequence.begin() + best_i, route.sequence.begin() + best_j - 1);
+        best_seq.push_back(delivery_id);
+        best_seq.insert(best_seq.end(), route.sequence.begin() + best_j - 1, route.sequence.end());
+    }
+
+    route.stats_valid = false;
+    return std::make_pair(best_cost, best_seq);
+}
+
+void validate_solution_integrity(const Solution &solution, const DARPInstance &instance)
+{
+    std::set<int> found_requests;
+    for (const auto &route : solution.routes)
+        for (int node_id : route.sequence)
+            if (node_id < (int)instance.nodes.size() &&
+                instance.nodes[node_id].type == NodeType::PICKUP)
+                found_requests.insert(instance.get_req_id_by_node(node_id));
+
+    for (int req_id : solution.unassigned_requests)
+        found_requests.insert(req_id);
+
+    if ((int)found_requests.size() != (int)instance.requests.size())
+    {
+        std::cerr << "INTEGRITY ERROR: " << found_requests.size()
+                  << " requests accounted for, expected " << instance.requests.size() << "\n";
+        for (const auto &req : instance.requests)
+        {
+            if (found_requests.find(req.id) == found_requests.end())
+                std::cerr << "  Missing request ID: " << req.id << "\n";
+        }
+    }
+}
