@@ -9,7 +9,6 @@ void greedyRepair(std::vector<Route> &sol,
                   const std::vector<Vehicle> &veh,
                   const Metadata &meta)
 {
-    // Sort employees: premium/normal first, then "any"
     std::vector<int> order;
     for (const auto &e : emp)
         order.push_back(e.id);
@@ -19,7 +18,7 @@ void greedyRepair(std::vector<Route> &sol,
                   // Premium/Normal employees have priority over "any"
                   bool aPriority = (emp[a].vehiclePref != "any");
                   bool bPriority = (emp[b].vehiclePref != "any");
-                  return aPriority > bPriority; // true (1) > false (0)
+                  return aPriority > bPriority;
               });
 
     std::vector<bool> assigned(emp.size(), false);
@@ -41,9 +40,6 @@ void greedyRepair(std::vector<Route> &sol,
                 Route tmp = sol[v];
                 tmp.seq.push_back(e.id);
                 tmp.isDirty = true;
-
-                // if (!routeFeasible(tmp, veh[v], emp))
-                //     continue;
 
                 double c = routeCost(tmp, veh[v], emp, meta);
                 if (c < bestCost)
@@ -156,8 +152,6 @@ void regretRepair(std::vector<Route> &sol,
                 tmp.seq.push_back(e.id);
                 tmp.isDirty = true;
 
-                // // if (!routeFeasible(tmp, veh[v], emp))
-                //     continue;
 
                 double c = routeCost(tmp, veh[v], emp, meta);
                 costs.push_back(c);

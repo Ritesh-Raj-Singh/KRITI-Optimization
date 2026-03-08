@@ -3,7 +3,7 @@
 #define MAPPER_H
 
 #include <map>
-#include <utility> // for std::pair
+#include <utility>
 
 extern double path_len[251][251];
 extern std::map<std::pair<double, double>, int> mappy;

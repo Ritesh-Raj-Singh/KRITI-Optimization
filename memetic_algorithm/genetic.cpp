@@ -234,6 +234,7 @@ struct ImportedSolution
 {
     vector<int> giantTour;
     vector<pair<int, vector<int>>> trips;
+    bool hasUnassigned = false;
 };
 
 vector<Driver> readVehicleCSV(const string &filename)
@@ -475,8 +476,15 @@ ImportedSolution readCSVSolution(const string &filename,
     }
 
     for (const auto &p : persons)
+    {
+
         if (!seenEmp.count(p.id))
+        {
+
+            sol.hasUnassigned = true;
             sol.giantTour.push_back(p.id);
+        }
+    }
 
     return sol;
 }
@@ -1078,6 +1086,11 @@ int main(int argc, char *argv[])
         testFile.close();
 
         ImportedSolution imported = readCSVSolution(filepath, persons, drivers);
+        if (imported.hasUnassigned)
+        {
+            cout << "  [" << folder << "] Skipped: Solution has unassigned people.\n";
+            continue;
+        }
 
         Chromosome c(persons.size());
         c.giantTour = imported.giantTour;
