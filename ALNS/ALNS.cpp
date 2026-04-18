@@ -78,6 +78,9 @@ std::vector<Route> solveALNS(
     else
         tot_it *= 6;
 
+    if(max_time>10 && max_time<=30) { tot_it*=2; }
+    else tot_it*=6;
+
     double cooling_rate = std::pow((T_end / T_start), (1.0 / tot_it));
     double T = T_start;
 
