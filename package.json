@@ -1,0 +1,23 @@
+{
+  "name": "kriti-optimization",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ritesh-Raj-Singh/KRITI-Optimization.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Ritesh-Raj-Singh/KRITI-Optimization/issues"
+  },
+  "homepage": "https://github.com/Ritesh-Raj-Singh/KRITI-Optimization#readme",
+  "dependencies": {
+    "clang-format": "^1.8.0"
+  }
+}
